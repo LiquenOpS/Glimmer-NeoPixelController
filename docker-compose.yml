@@ -1,0 +1,83 @@
+services:
+  # Orion is an NGSI-v2 context broker
+  orion:
+    labels:
+      org.fiware: 'signage-project'
+    image: fiware/orion:${ORION_VERSION}
+    hostname: orion
+    container_name: fiware-orion
+    depends_on:
+      - mongo-db
+    networks:
+      - fiware_net
+    ports:
+      - "${ORION_PORT}:${ORION_PORT}" # e.g., localhost:1026
+    command: -dbURI mongodb://mongo-db:${MONGO_DB_PORT} -logLevel DEBUG -noCache
+    healthcheck:
+      test: curl --fail -s http://orion:${ORION_PORT}/version || exit 1
+      interval: 5s
+
+  # IoT Agent for JSON
+  iot-agent-json:
+    labels:
+      org.fiware: 'signage-project'
+    image: fiware/iotagent-json:${IOTA_JSON_VERSION}
+    hostname: iot-agent-json
+    container_name: fiware-iot-agent-json
+    depends_on:
+      - mongo-db
+      - orion
+    networks:
+      - fiware_net
+    ports:
+      - "${IOTA_NORTH_PORT}:${IOTA_NORTH_PORT}" # e.g., localhost:4041 for device traffic
+      - "${IOTA_SOUTH_PORT}:${IOTA_SOUTH_PORT}" # South Port for commands
+    environment:
+      - IOTA_CB_HOST=orion                    # Context Broker 的主機名稱 (service name)
+      - IOTA_CB_PORT=${ORION_PORT}            # Context Broker 的連接埠
+      - IOTA_NORTH_PORT=${IOTA_NORTH_PORT}    # Agent 監聽設備請求的連接埠
+      - IOTA_SOUTH_PORT=${IOTA_SOUTH_PORT}    # 接受Context Broker的指令
+      - IOTA_LOG_LEVEL=DEBUG                  # 啟用詳細日誌
+      - IOTA_TIMESTAMP=true                   # 自動加上時間戳
+      - IOTA_REGISTRY_TYPE=mongodb
+      - IOTA_MONGO_HOST=mongo-db              # Agent 自身也需要連接 MongoDB
+      - IOTA_MONGO_PORT=${MONGO_DB_PORT}
+      - IOTA_MONGO_DB=iotagentjson            # 為 Agent 指定不同的資料庫名稱
+      - IOTA_PROVIDER_URL=http://iot-agent-json:${IOTA_NORTH_PORT}
+      - IOTA_HTTP_PORT=${IOTA_SOUTH_PORT}
+    healthcheck:
+      test: curl --fail -s http://iot-agent-json:${IOTA_NORTH_PORT}/iot/about || exit 1
+      interval: 5s
+
+  # MongoDB Database
+  mongo-db:
+    labels:
+      org.fiware: 'signage-project'
+    image: mongo:${MONGO_DB_VERSION}
+    hostname: mongo-db
+    container_name: db-mongo
+    expose:
+      - "${MONGO_DB_PORT}"
+    ports:
+      - "${MONGO_DB_PORT}:${MONGO_DB_PORT}" # e.g., localhost:27017 for local debugging
+    networks:
+      - fiware_net
+    volumes:
+      - mongo-db:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+networks:
+  fiware_net:
+    labels:
+      org.fiware: 'signage-project'
+    ipam:
+      config:
+        - subnet: 172.18.1.0/24
+
+volumes:
+  mongo-db: ~
