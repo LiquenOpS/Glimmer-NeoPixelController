@@ -1,3 +1,4 @@
+#!/bin/bash
 source ../config.sh
 
 curl -L -X POST "http://${HOST}:${ORION_PORT}/v2/subscriptions" \
@@ -10,7 +11,7 @@ curl -L -X POST "http://${HOST}:${ORION_PORT}/v2/subscriptions" \
     "entities": [
       {	
 	"idPattern": ".*",
-        "type": "Screen"
+        "type": "Signage"
       }
     ],
     "condition": {

@@ -10,7 +10,7 @@ fi
 
 DEVICE_ID=$1
 
-curl -s -o /dev/null -w "%{http_code}" -L -X POST "http://${HOST}:${IOTA_SOUTH_PORT}/iot/json?i=${DEVICE_ID}&k=sign" \
+curl -s  -X POST "http://${IOTA_HOST}:${IOTA_SOUTH_PORT}/iot/json?k=SignKey&i=${DEVICE_ID}" \
 -H "${HEADER_CONTENT_TYPE}" \
 --data-raw '{"status":"online"}'
 

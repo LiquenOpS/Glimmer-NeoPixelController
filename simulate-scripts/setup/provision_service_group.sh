@@ -1,18 +1,19 @@
+#!/bin/bash
 source ../config.sh
 
 echo "Provisioning IoT Agent with a Service Group..."
 echo "----------------------------------------------"
 
-curl -s -o /dev/null -w "%{http_code}" -L -X POST "http://${HOST}:${IOTA_NORTH_PORT}/iot/services" \
+curl -s -o /dev/null -w "%{http_code}" -L -X POST "http://${IOTA_HOST}:${IOTA_NORTH_PORT}/iot/services" \
 -H "${HEADER_CONTENT_TYPE}" \
 -H "${HEADER_FIWARE_SERVICE}" \
 -H "${HEADER_FIWARE_SERVICEPATH}" \
 --data-raw '{
     "services": [
         {
-            "apikey": "sign",
+            "apikey": "SignKey",
             "cbroker": "http://orion:1026",
-            "entity_type": "Screen",
+            "entity_type": "Signage",
             "resource": "/iot/json"
         }
     ]
