@@ -1,14 +1,9 @@
 #!/bin/bash
 
-source ../config.sh
-
-if [ -z "$1" ]; then
-  echo "Usage: $0 <device-id> <device-name>"
+if [ -z "$DEVICE_ID" ] || [ -z "$DEVICE_NAME" ]; then
+  echo "Error: DEVICE_ID or DEVICE_NAME not set."
   exit 1
 fi
-
-DEVICE_ID=$1
-DEVICE_NAME=$2
 
 echo "Provisioning IoT Agent with a Device...: ${DEVICE_ID} ${DEVICE_NAME}"
 echo "----------------------------------------------"
@@ -23,7 +18,7 @@ PAYLOAD=$(cat <<EOF
             "transport": "HTTP",
             "protocol": "PDI-IoTA-JSON",
             "apikey": "SignKey",
-            "endpoint": "http://${IoT_Device_Flask}:${IoT_Deivce_Flask_Port}/{command}",
+            "endpoint": "http://${IoT_Device_Flask}:${IoT_Deivce_Flask_Port}/command",
             "commands": [
                 {
                     "name": "listAssets",

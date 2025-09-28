@@ -1,5 +1,4 @@
 #!/bin/bash
-source ../config.sh
 
 echo "Provisioning IoT Agent with a Service Group..."
 echo "----------------------------------------------"

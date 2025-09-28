@@ -1,5 +1,4 @@
 #!/bin/bash
-source ../config.sh
 
 curl -L -X POST "http://${HOST}:${ORION_PORT}/v2/subscriptions" \
 -H "Content-Type: application/json" \
