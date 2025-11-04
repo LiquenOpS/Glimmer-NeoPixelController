@@ -1,4 +1,5 @@
 #!/bin/bash
+source .env
 
 echo "Provisioning IoT Agent with a Service Group..."
 echo "----------------------------------------------"
