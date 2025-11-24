@@ -95,31 +95,70 @@ class LEDConfig:
         # self._lock = threading.Lock()
 
     def get_state(self):
-        """Get current configuration as dict"""
+        """Get current configuration as dict (hierarchical structure)"""
         # with self._lock:
         if True:
             return {
                 "state": self.state,
                 "enabled": self.enabled,
-                "static_effect": self.static_effect,
-                "rotation_enabled": self.rotation_enabled,
-                "rotation_period": self.rotation_period,
-                "volume_compensation": self.volume_compensation,
-                "auto_gain": self.auto_gain,
-                "rainbow_speed": self.rainbow_speed,
-                "rainbow_brightness": self.rainbow_brightness,
+                "audio": {
+                    "static_effect": self.static_effect,
+                    "volume_compensation": self.volume_compensation,
+                    "auto_gain": self.auto_gain,
+                },
+                "rotation": {
+                    "enabled": self.rotation_enabled,
+                    "period": self.rotation_period,
+                },
+                "rainbow": {
+                    "speed": self.rainbow_speed,
+                    "brightness": self.rainbow_brightness,
+                },
                 "available_effects": AVAILABLE_EFFECTS,
             }
 
     def update(self, **kwargs):
-        """Update configuration"""
+        """Update configuration (supports both flat and hierarchical structure)"""
         # with self._lock:
         if True:
+            # Top-level settings
             if "state" in kwargs:
                 if kwargs["state"] in ["off", "rainbow", "audio_static", "audio_dynamic"]:
                     self.state = kwargs["state"]
                     self.enabled = kwargs["state"] != "off"
 
+            if "enabled" in kwargs:
+                self.enabled = bool(kwargs["enabled"])
+
+            # Audio settings (hierarchical)
+            if "audio" in kwargs:
+                audio = kwargs["audio"]
+                if "static_effect" in audio and audio["static_effect"] in AVAILABLE_EFFECTS:
+                    self.static_effect = audio["static_effect"]
+                if "volume_compensation" in audio:
+                    self.volume_compensation = max(
+                        0.1, min(5.0, float(audio["volume_compensation"]))
+                    )
+                if "auto_gain" in audio:
+                    self.auto_gain = bool(audio["auto_gain"])
+
+            # Rotation settings (hierarchical)
+            if "rotation" in kwargs:
+                rotation = kwargs["rotation"]
+                if "enabled" in rotation:
+                    self.rotation_enabled = bool(rotation["enabled"])
+                if "period" in rotation:
+                    self.rotation_period = max(1.0, float(rotation["period"]))
+
+            # Rainbow settings (hierarchical)
+            if "rainbow" in kwargs:
+                rainbow = kwargs["rainbow"]
+                if "speed" in rainbow:
+                    self.rainbow_speed = max(1, min(100, int(rainbow["speed"])))
+                if "brightness" in rainbow:
+                    self.rainbow_brightness = max(0, min(255, int(rainbow["brightness"])))
+
+            # Legacy flat structure support (for backward compatibility)
             if "static_effect" in kwargs and kwargs["static_effect"] in AVAILABLE_EFFECTS:
                 self.static_effect = kwargs["static_effect"]
 
@@ -142,14 +181,14 @@ class LEDConfig:
                 self.rainbow_brightness = max(0, min(255, int(kwargs["rainbow_brightness"])))
 
     def save(self, filepath="led_config.json"):
-        """Save configuration to file"""
+        """Save configuration to file (hierarchical structure)"""
         # with self._lock:
         if True:
             config = self.get_state()
             # Remove available_effects from saved config
             config.pop("available_effects", None)
-            with open(filepath, "w") as f:
-                json.dump(config, f, indent=2)
+            with open(filepath, "w", encoding="utf-8") as f:
+                json.dump(config, f, indent=2, ensure_ascii=False)
 
     def load(self, filepath="led_config.json"):
         """Load configuration from file"""
@@ -1240,148 +1279,171 @@ def create_http_api(controller, port=8080):
         """Get current configuration"""
         return jsonify(controller.config.get_state())
 
-    @app.route("/api/config", methods=["POST"])
+    def _flatten_dot_notation(data):
+        """
+        Convert dot notation keys to hierarchical structure.
+
+        Example:
+            {"rotation.period": 5, "audio.volume_compensation": 1.5}
+        becomes:
+            {"rotation": {"period": 5}, "audio": {"volume_compensation": 1.5}}
+        """
+        result = {}
+
+        for key, value in data.items():
+            if "." in key:
+                # Split by dot to get nested path
+                parts = key.split(".")
+                current = result
+
+                # Navigate/create nested structure
+                for i, part in enumerate(parts[:-1]):
+                    if part not in current:
+                        current[part] = {}
+                    elif not isinstance(current[part], dict):
+                        # If already exists but not a dict, skip this key
+                        break
+                    current = current[part]
+                else:
+                    # Set the final value
+                    current[parts[-1]] = value
+            else:
+                # No dot, keep as is
+                result[key] = value
+
+        return result
+
+    @app.route("/api/config", methods=["POST", "PUT", "PATCH"])
     def update_config():
-        """Update configuration"""
+        """
+        Update configuration (supports hierarchical structure)
+
+        Hierarchical structure:
+        {
+            "state": "off" | "rainbow" | "audio_static" | "audio_dynamic",
+            "audio": {
+                "static_effect": "effect_name",
+                "volume_compensation": 1.0,
+                "auto_gain": true
+            },
+            "rotation": {
+                "enabled": true,
+                "period": 10.0
+            },
+            "rainbow": {
+                "speed": 20,
+                "brightness": 77
+            }
+        }
+
+        Also supports:
+        - Flat structure (backward compatibility): "static_effect", "rotation_period", etc.
+        - Dot notation: "rotation.period", "audio.volume_compensation", etc.
+        """
         try:
             data = request.get_json()
+
+            # Convert dot notation to hierarchical structure
+            data = _flatten_dot_notation(data)
+
+            # Define valid configuration keys
+            VALID_TOP_LEVEL_KEYS = {"state", "enabled"}
+            VALID_AUDIO_KEYS = {"static_effect", "volume_compensation", "auto_gain"}
+            VALID_ROTATION_KEYS = {"enabled", "period"}
+            VALID_RAINBOW_KEYS = {"speed", "brightness"}
+            VALID_FLAT_KEYS = {
+                "static_effect",
+                "volume_compensation",
+                "auto_gain",
+                "rotation_enabled",
+                "rotation_period",
+                "rainbow_speed",
+                "rainbow_brightness",
+            }
+
+            # Check if request contains any valid configuration keys
+            has_valid_key = False
+
+            # Check top-level keys
+            for key in VALID_TOP_LEVEL_KEYS:
+                if key in data:
+                    has_valid_key = True
+                    break
+
+            # Check hierarchical keys
+            if not has_valid_key:
+                if "audio" in data and isinstance(data["audio"], dict):
+                    if any(key in data["audio"] for key in VALID_AUDIO_KEYS):
+                        has_valid_key = True
+                if "rotation" in data and isinstance(data["rotation"], dict):
+                    if any(key in data["rotation"] for key in VALID_ROTATION_KEYS):
+                        has_valid_key = True
+                if "rainbow" in data and isinstance(data["rainbow"], dict):
+                    if any(key in data["rainbow"] for key in VALID_RAINBOW_KEYS):
+                        has_valid_key = True
+
+            # Check flat keys
+            if not has_valid_key:
+                if any(key in data for key in VALID_FLAT_KEYS):
+                    has_valid_key = True
+
+            # If no valid keys found, return error
+            if not has_valid_key:
+                return jsonify(
+                    {
+                        "success": False,
+                        "error": "No valid configuration keys provided. Valid keys include: "
+                        "state, enabled, audio.*, rotation.*, rainbow.*, or legacy flat keys.",
+                    }
+                ), 400
+
+            # Validate state if provided
+            if "state" in data:
+                if data["state"] not in ["off", "rainbow", "audio_static", "audio_dynamic"]:
+                    return jsonify(
+                        {
+                            "success": False,
+                            "error": "Invalid state. Must be: off, rainbow, audio_static, or audio_dynamic",
+                        }
+                    ), 400
+
+            # Validate effect if provided
+            if "audio" in data and "static_effect" in data["audio"]:
+                if data["audio"]["static_effect"] not in AVAILABLE_EFFECTS:
+                    return jsonify(
+                        {
+                            "success": False,
+                            "error": f"Invalid effect. Must be one of: {AVAILABLE_EFFECTS}",
+                        }
+                    ), 400
+
+            # Legacy flat structure support
+            if "static_effect" in data:
+                if data["static_effect"] not in AVAILABLE_EFFECTS:
+                    return jsonify(
+                        {
+                            "success": False,
+                            "error": f"Invalid effect. Must be one of: {AVAILABLE_EFFECTS}",
+                        }
+                    ), 400
+
+            # Update configuration
             controller.config.update(**data)
 
             # Save configuration
             controller.config.save()
 
             # Reset rotation timer if rotation settings changed
-            if "rotation_period" in data or "rotation_enabled" in data:
+            if "rotation" in data or "rotation_period" in data or "rotation_enabled" in data:
                 controller.last_rotation_time = time.time()
 
+            # Update current effect if static_effect changed (for immediate effect)
+            if "audio" in data and "static_effect" in data["audio"]:
+                controller.set_effect(data["audio"]["static_effect"])
+            elif "static_effect" in data:
+                controller.set_effect(data["static_effect"])
+
             return jsonify({"success": True, "config": controller.config.get_state()})
-        except Exception as e:
-            return jsonify({"success": False, "error": str(e)}), 400
-
-    @app.route("/api/state", methods=["POST"])
-    def set_state():
-        """Set LED state (on/off/rainbow/audio_static/audio_dynamic)"""
-        try:
-            data = request.get_json()
-            state = data.get("state")
-
-            if state not in ["off", "rainbow", "audio_static", "audio_dynamic"]:
-                return jsonify(
-                    {
-                        "success": False,
-                        "error": "Invalid state. Must be: off, rainbow, audio_static, or audio_dynamic",
-                    }
-                ), 400
-
-            controller.config.update(state=state)
-            controller.config.save()
-
-            return jsonify({"success": True, "state": state})
-        except Exception as e:
-            return jsonify({"success": False, "error": str(e)}), 400
-
-    @app.route("/api/effect", methods=["POST"])
-    def set_effect():
-        """Set current effect (for audio_static mode)"""
-        try:
-            data = request.get_json()
-            effect = data.get("effect")
-
-            if effect not in AVAILABLE_EFFECTS:
-                return jsonify(
-                    {
-                        "success": False,
-                        "error": f"Invalid effect. Must be one of: {AVAILABLE_EFFECTS}",
-                    }
-                ), 400
-
-            controller.set_effect(effect)
-            controller.config.update(static_effect=effect)
-            controller.config.save()
-
-            return jsonify({"success": True, "effect": effect})
-        except Exception as e:
-            return jsonify({"success": False, "error": str(e)}), 400
-
-    @app.route("/api/volume_compensation", methods=["POST"])
-    def set_volume_compensation():
-        """Set volume compensation"""
-        try:
-            data = request.get_json()
-            compensation = data.get("volume_compensation")
-            auto_gain = data.get("auto_gain")
-
-            updates = {}
-            if compensation is not None:
-                updates["volume_compensation"] = float(compensation)
-            if auto_gain is not None:
-                updates["auto_gain"] = bool(auto_gain)
-
-            controller.config.update(**updates)
-            controller.config.save()
-
-            return jsonify(
-                {
-                    "success": True,
-                    "volume_compensation": controller.config.volume_compensation,
-                    "auto_gain": controller.config.auto_gain,
-                }
-            )
-        except Exception as e:
-            return jsonify({"success": False, "error": str(e)}), 400
-
-    @app.route("/api/rotation", methods=["POST"])
-    def set_rotation():
-        """Set effect rotation settings"""
-        try:
-            data = request.get_json()
-            period = data.get("rotation_period")
-            enabled = data.get("rotation_enabled")
-
-            updates = {}
-            if period is not None:
-                updates["rotation_period"] = float(period)
-            if enabled is not None:
-                updates["rotation_enabled"] = bool(enabled)
-
-            controller.config.update(**updates)
-            controller.config.save()
-            controller.last_rotation_time = time.time()  # Reset timer
-
-            return jsonify(
-                {
-                    "success": True,
-                    "rotation_period": controller.config.rotation_period,
-                    "rotation_enabled": controller.config.rotation_enabled,
-                }
-            )
-        except Exception as e:
-            return jsonify({"success": False, "error": str(e)}), 400
-
-    @app.route("/api/rainbow", methods=["POST"])
-    def set_rainbow_settings():
-        """Set rainbow mode settings"""
-        try:
-            data = request.get_json()
-            speed = data.get("rainbow_speed")
-            brightness = data.get("rainbow_brightness")
-
-            updates = {}
-            if speed is not None:
-                updates["rainbow_speed"] = int(speed)
-            if brightness is not None:
-                updates["rainbow_brightness"] = int(brightness)
-
-            controller.config.update(**updates)
-            controller.config.save()
-
-            return jsonify(
-                {
-                    "success": True,
-                    "rainbow_speed": controller.config.rainbow_speed,
-                    "rainbow_brightness": controller.config.rainbow_brightness,
-                }
-            )
         except Exception as e:
             return jsonify({"success": False, "error": str(e)}), 400
 

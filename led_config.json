@@ -1,11 +1,17 @@
 {
-  "state": "rainbow",
+  "state": "audio_dynamic",
   "enabled": true,
-  "static_effect": "fire",
-  "rotation_enabled": true,
-  "rotation_period": 10.0,
-  "volume_compensation": 1.5,
-  "auto_gain": false,
-  "rainbow_speed": 10,
-  "rainbow_brightness": 100
+  "audio": {
+    "static_effect": "waterfall",
+    "volume_compensation": 5.0,
+    "auto_gain": false
+  },
+  "rotation": {
+    "enabled": true,
+    "period": 5.0
+  },
+  "rainbow": {
+    "speed": 10,
+    "brightness": 255
+  }
 }
