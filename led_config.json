@@ -2,8 +2,8 @@
   "state": "audio_dynamic",
   "enabled": true,
   "audio": {
-    "static_effect": "waterfall",
-    "volume_compensation": 5.0,
+    "static_effect": "frequency_wave",
+    "volume_compensation": 1.0,
     "auto_gain": false
   },
   "rotation": {
