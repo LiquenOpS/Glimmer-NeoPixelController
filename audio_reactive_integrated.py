@@ -10,54 +10,159 @@ Input Sources:
 
 Output Targets:
 - Real LED via rpi_ws281x
-- Terminal emulator
+- Terminal simulator
 """
 
-import sys
+import argparse
+import curses
+import json
+import select
 import socket
 import struct
-import time
+import sys
 import threading
-import argparse
+import time
 from collections import deque
-import select
-import curses
 
-# Check for emulator mode
-USE_EMULATOR = '--emulator' in sys.argv or '--emu' in sys.argv
+from flask import Flask, jsonify, request
+from flask_cors import CORS
+
+# Check for simulator mode
+USE_SIMULATOR = "--simulator" in sys.argv
 
 # Import LED control
-if USE_EMULATOR:
-    print("🔮 Using LED Emulator mode")
-    from led_emulator import PixelStrip, Color
+if USE_SIMULATOR:
+    print("🔮 Using LED Simulator mode")
+    from led_simulator import Color, PixelStrip
 else:
-    try:
-        from rpi_ws281x import PixelStrip, Color
-        print("💡 Using Real LED mode")
-    except ImportError:
-        print("⚠️  rpi-ws281x not available, falling back to emulator")
-        from led_emulator import PixelStrip, Color
-        USE_EMULATOR = True
-
-try:
-    import numpy as np
-    NUMPY_AVAILABLE = True
-except ImportError:
-    print("⚠️  NumPy not available - some features disabled")
-    NUMPY_AVAILABLE = False
+    print("💡 Using Real LED mode")
+    from rpi_ws281x import Color, PixelStrip
 
 
-# LED Configuration
-LED_COUNT = 60
-LED_PIN = 18
 FFT_BINS = 16
+LED_COUNT_SIM = 60
+
+# LED strip configuration
+LED_COUNT = 420  # Number of LEDs 420 for 5m
+LED_PIN = 18  # GPIO pin (must support PWM, e.g., GPIO18)
+LED_FREQ_HZ = 800000  # LED signal frequency (usually 800kHz)
+LED_DMA = 10  # DMA channel to use for generating signal
+LED_BRIGHTNESS = 77  # Brightness (0-255)
+LED_INVERT = False  # Invert signal (set True if needed)
+LED_CHANNEL = 0  # PWM channel
+LED_STRIP_TYPE = None  # Leave as default
+
 
 # Available effects list
 AVAILABLE_EFFECTS = [
-    "spectrum_bars", "vu_meter", "rainbow_spectrum", "fire",
-    "frequency_wave", "blurz", "pixels", "puddles", "ripple",
-    "color_wave", "waterfall", "beat_pulse"
+    "spectrum_bars",
+    "vu_meter",
+    "rainbow_spectrum",
+    "fire",
+    "frequency_wave",
+    "blurz",
+    "pixels",
+    "puddles",
+    "ripple",
+    "color_wave",
+    "waterfall",
+    "beat_pulse",
 ]
+
+
+class LEDConfig:
+    """Configuration manager for LED controller"""
+
+    def __init__(self):
+        # State: "off", "rainbow", "audio_static", "audio_dynamic"
+        self.state = "audio_dynamic"
+        self.enabled = True
+
+        # Audio reactive mode settings
+        self.static_effect = "spectrum_bars"  # Effect to use in audio_static mode
+        self.rotation_enabled = True  # Whether to rotate effects in audio_dynamic mode
+        self.rotation_period = 10.0  # Seconds between effect changes
+
+        # Volume compensation
+        self.volume_compensation = 1.0  # Multiplier for volume (0.1 - 5.0)
+        self.auto_gain = True  # Automatic gain control
+
+        # Rainbow mode settings
+        self.rainbow_speed = 20  # Speed of rainbow animation (ms per frame)
+        self.rainbow_brightness = 77  # Brightness for rainbow mode (0-255)
+
+        # TODO: there is deadlock so skip locking
+        # self._lock = threading.Lock()
+
+    def get_state(self):
+        """Get current configuration as dict"""
+        # with self._lock:
+        if True:
+            return {
+                "state": self.state,
+                "enabled": self.enabled,
+                "static_effect": self.static_effect,
+                "rotation_enabled": self.rotation_enabled,
+                "rotation_period": self.rotation_period,
+                "volume_compensation": self.volume_compensation,
+                "auto_gain": self.auto_gain,
+                "rainbow_speed": self.rainbow_speed,
+                "rainbow_brightness": self.rainbow_brightness,
+                "available_effects": AVAILABLE_EFFECTS,
+            }
+
+    def update(self, **kwargs):
+        """Update configuration"""
+        # with self._lock:
+        if True:
+            if "state" in kwargs:
+                if kwargs["state"] in ["off", "rainbow", "audio_static", "audio_dynamic"]:
+                    self.state = kwargs["state"]
+                    self.enabled = kwargs["state"] != "off"
+
+            if "static_effect" in kwargs and kwargs["static_effect"] in AVAILABLE_EFFECTS:
+                self.static_effect = kwargs["static_effect"]
+
+            if "rotation_enabled" in kwargs:
+                self.rotation_enabled = bool(kwargs["rotation_enabled"])
+
+            if "rotation_period" in kwargs:
+                self.rotation_period = max(1.0, float(kwargs["rotation_period"]))
+
+            if "volume_compensation" in kwargs:
+                self.volume_compensation = max(0.1, min(5.0, float(kwargs["volume_compensation"])))
+
+            if "auto_gain" in kwargs:
+                self.auto_gain = bool(kwargs["auto_gain"])
+
+            if "rainbow_speed" in kwargs:
+                self.rainbow_speed = max(1, min(100, int(kwargs["rainbow_speed"])))
+
+            if "rainbow_brightness" in kwargs:
+                self.rainbow_brightness = max(0, min(255, int(kwargs["rainbow_brightness"])))
+
+    def save(self, filepath="led_config.json"):
+        """Save configuration to file"""
+        # with self._lock:
+        if True:
+            config = self.get_state()
+            # Remove available_effects from saved config
+            config.pop("available_effects", None)
+            with open(filepath, "w") as f:
+                json.dump(config, f, indent=2)
+
+    def load(self, filepath="led_config.json"):
+        """Load configuration from file"""
+        try:
+            with open(filepath, "r") as f:
+                config = json.load(f)
+                self.update(**config)
+                return True
+        except FileNotFoundError:
+            return False
+        except Exception as e:
+            print(f"⚠️  Error loading config: {e}")
+            return False
 
 
 class UDPAudioReceiver:
@@ -66,7 +171,7 @@ class UDPAudioReceiver:
     Supports EQ Streamer and WLED Audio Sync formats
     """
 
-    def __init__(self, port=31337, protocol='auto'):
+    def __init__(self, port=31337, protocol="auto"):
         """
         Initialize UDP receiver
 
@@ -86,7 +191,7 @@ class UDPAudioReceiver:
 
     def start(self):
         """Start listening"""
-        self.sock.bind(('', self.port))
+        self.sock.bind(("", self.port))
         self.running = True
         print(f"📡 UDP receiver listening on port {self.port} (protocol: {self.protocol})")
 
@@ -100,20 +205,20 @@ class UDPAudioReceiver:
                 return None
 
             # Auto-detect protocol
-            if self.protocol == 'auto':
-                if data[0:2] == b'EQ':
+            if self.protocol == "auto":
+                if data[0:2] == b"EQ":
                     return self._parse_eqstreamer(data)
-                elif len(data) >= 6 and data[0:5] == b'00001':
+                elif len(data) >= 6 and data[0:5] == b"00001":
                     return self._parse_wled_v1(data)
-                elif len(data) >= 6 and data[0:5] == b'00002':
+                elif len(data) >= 6 and data[0:5] == b"00002":
                     return self._parse_wled_v2(data)
-            elif self.protocol == 'eqstreamer':
+            elif self.protocol == "eqstreamer":
                 return self._parse_eqstreamer(data)
-            elif self.protocol == 'wled':
+            elif self.protocol == "wled":
                 if len(data) >= 6:
-                    if data[0:5] == b'00002':
+                    if data[0:5] == b"00002":
                         return self._parse_wled_v2(data)
-                    elif data[0:5] == b'00001':
+                    elif data[0:5] == b"00001":
                         return self._parse_wled_v1(data)
 
             return None
@@ -130,7 +235,7 @@ class UDPAudioReceiver:
         if len(data) < 35:
             return None
 
-        if data[0] != ord('E') or data[1] != ord('Q'):
+        if data[0] != ord("E") or data[1] != ord("Q"):
             return None
 
         version = data[2]
@@ -140,8 +245,8 @@ class UDPAudioReceiver:
         bands_32 = [b for b in bands_data]
         fft_result = []
         for i in range(0, min(32, len(bands_32)), 2):
-            if i+1 < len(bands_32):
-                avg = (bands_32[i] + bands_32[i+1]) // 2
+            if i + 1 < len(bands_32):
+                avg = (bands_32[i] + bands_32[i + 1]) // 2
             else:
                 avg = bands_32[i]
             fft_result.append(avg)
@@ -161,15 +266,15 @@ class UDPAudioReceiver:
         self.last_packet_time = time.time()
 
         return {
-            'type': 'eqstreamer',
-            'fft_result': fft_result[:FFT_BINS],
-            'sample_raw': int(volume_raw),
-            'sample_agc': int(volume_smooth),
-            'sample_avg': volume_smooth,
-            'sample_peak': sample_peak,
-            'fft_magnitude': max(bands_32) if bands_32 else 0,
-            'fft_major_peak': 120.0,
-            'mult_agc': 1.0
+            "type": "eqstreamer",
+            "fft_result": fft_result[:FFT_BINS],
+            "sample_raw": int(volume_raw),
+            "sample_agc": int(volume_smooth),
+            "sample_avg": volume_smooth,
+            "sample_peak": sample_peak,
+            "fft_magnitude": max(bands_32) if bands_32 else 0,
+            "fft_major_peak": 120.0,
+            "mult_agc": 1.0,
         }
 
     def _parse_wled_v1(self, data):
@@ -185,15 +290,15 @@ class UDPAudioReceiver:
         offset += 32
 
         # sampleAgc (int32)
-        sample_agc = struct.unpack('<i', data[offset:offset+4])[0]
+        sample_agc = struct.unpack("<i", data[offset : offset + 4])[0]
         offset += 4
 
         # sampleRaw (int32)
-        sample_raw = struct.unpack('<i', data[offset:offset+4])[0]
+        sample_raw = struct.unpack("<i", data[offset : offset + 4])[0]
         offset += 4
 
         # sampleAvg (float)
-        sample_avg = struct.unpack('<f', data[offset:offset+4])[0]
+        sample_avg = struct.unpack("<f", data[offset : offset + 4])[0]
         offset += 4
 
         # samplePeak (bool/uint8)
@@ -201,28 +306,28 @@ class UDPAudioReceiver:
         offset += 1
 
         # fftResult[16] (uint8)
-        fft_result = list(data[offset:offset+16])
+        fft_result = list(data[offset : offset + 16])
         offset += 16
 
         # FFT_Magnitude (double)
-        fft_magnitude = struct.unpack('<d', data[offset:offset+8])[0]
+        fft_magnitude = struct.unpack("<d", data[offset : offset + 8])[0]
         offset += 8
 
         # FFT_MajorPeak (double)
-        fft_major_peak = struct.unpack('<d', data[offset:offset+8])[0]
+        fft_major_peak = struct.unpack("<d", data[offset : offset + 8])[0]
 
         self.last_packet_time = time.time()
 
         return {
-            'type': 'wled_v1',
-            'fft_result': fft_result,
-            'sample_raw': sample_raw,
-            'sample_agc': sample_agc,
-            'sample_avg': sample_avg,
-            'sample_peak': sample_peak,
-            'fft_magnitude': fft_magnitude,
-            'fft_major_peak': fft_major_peak,
-            'mult_agc': 1.0
+            "type": "wled_v1",
+            "fft_result": fft_result,
+            "sample_raw": sample_raw,
+            "sample_agc": sample_agc,
+            "sample_avg": sample_avg,
+            "sample_peak": sample_peak,
+            "fft_magnitude": fft_magnitude,
+            "fft_major_peak": fft_major_peak,
+            "mult_agc": 1.0,
         }
 
     def _parse_wled_v2(self, data):
@@ -236,11 +341,11 @@ class UDPAudioReceiver:
         offset += 2  # Skip reserved1
 
         # sampleRaw (float)
-        sample_raw = struct.unpack('<f', data[offset:offset+4])[0]
+        sample_raw = struct.unpack("<f", data[offset : offset + 4])[0]
         offset += 4
 
         # sampleSmth (float)
-        sample_smooth = struct.unpack('<f', data[offset:offset+4])[0]
+        sample_smooth = struct.unpack("<f", data[offset : offset + 4])[0]
         offset += 4
 
         # samplePeak (uint8)
@@ -251,31 +356,31 @@ class UDPAudioReceiver:
         offset += 1
 
         # fftResult[16] (uint8)
-        fft_result = list(data[offset:offset+16])
+        fft_result = list(data[offset : offset + 16])
         offset += 16
 
         # reserved3 (uint16)
         offset += 2
 
         # FFT_Magnitude (float)
-        fft_magnitude = struct.unpack('<f', data[offset:offset+4])[0]
+        fft_magnitude = struct.unpack("<f", data[offset : offset + 4])[0]
         offset += 4
 
         # FFT_MajorPeak (float)
-        fft_major_peak = struct.unpack('<f', data[offset:offset+4])[0]
+        fft_major_peak = struct.unpack("<f", data[offset : offset + 4])[0]
 
         self.last_packet_time = time.time()
 
         return {
-            'type': 'wled_v2',
-            'fft_result': fft_result,
-            'sample_raw': int(sample_raw),
-            'sample_agc': int(sample_smooth),
-            'sample_avg': sample_smooth,
-            'sample_peak': sample_peak,
-            'fft_magnitude': fft_magnitude,
-            'fft_major_peak': fft_major_peak,
-            'mult_agc': 1.0
+            "type": "wled_v2",
+            "fft_result": fft_result,
+            "sample_raw": int(sample_raw),
+            "sample_agc": int(sample_smooth),
+            "sample_avg": sample_smooth,
+            "sample_peak": sample_peak,
+            "fft_magnitude": fft_magnitude,
+            "fft_major_peak": fft_major_peak,
+            "mult_agc": 1.0,
         }
 
     def is_active(self, timeout=3.0):
@@ -294,22 +399,40 @@ class IntegratedLEDController:
     Receives audio data via UDP and controls LEDs
     """
 
-    def __init__(self, led_count=LED_COUNT, led_pin=LED_PIN, udp_port=31337, udp_protocol='auto', use_emulator=False, curses_screen=None):
+    def __init__(
+        self,
+        led_count=LED_COUNT_SIM,
+        led_pin=LED_PIN,
+        udp_port=31337,
+        udp_protocol="auto",
+        use_simulator=False,
+        curses_screen=None,
+    ):
         # Initialize LED strip
-        if use_emulator:
-            from led_emulator import PixelStripEmulator
-            self.strip = PixelStripEmulator(led_count, led_pin)
+        if use_simulator:
+            from led_simulator import PixelStripSimulator
+
+            self.strip = PixelStripSimulator(led_count, led_pin)
             self.strip.display_mode = "horizontal"
             # Disable printing in curses mode
             if curses_screen is not None:
                 self.strip.silent_mode = True
         else:
-            self.strip = PixelStrip(led_count, led_pin, 800000, 10, False, 255, 0)
+            self.strip = PixelStrip(
+                LED_COUNT,
+                LED_PIN,
+                LED_FREQ_HZ,
+                LED_DMA,
+                LED_INVERT,
+                LED_BRIGHTNESS,
+                LED_CHANNEL,
+                LED_STRIP_TYPE,
+            )
 
         if curses_screen is None:
             self.strip.begin()
             self.num_leds = led_count
-            self.use_emulator = use_emulator
+            self.use_simulator = use_simulator
 
         # Initialize UDP receiver
         self.udp_receiver = UDPAudioReceiver(port=udp_port, protocol=udp_protocol)
@@ -326,19 +449,29 @@ class IntegratedLEDController:
 
         # Effect state variables
         self.effect_state = {
-            'time': 0,
-            'hue_offset': 0,
-            'pixel_history': deque(maxlen=32),
-            'ripple_positions': [],
+            "time": 0,
+            "hue_offset": 0,
+            "pixel_history": deque(maxlen=32),
+            "ripple_positions": [],
         }
 
-        # Curses screen for emulator mode
+        # Configuration
+        self.config = LEDConfig()
+        self.config.load()  # Try to load saved config
+
+        # Effect rotation
+        self.last_rotation_time = time.time()
+
+        # Rainbow mode state
+        self.rainbow_offset = 0
+
+        # Curses screen for simulator mode
         self.stdscr = curses_screen
         self.use_curses = curses_screen is not None
 
-        # Keyboard input thread (only for non-curses emulator mode)
+        # Keyboard input thread (for all non-curses modes, including real LED mode)
         self.keyboard_thread = None
-        self.enable_keyboard = use_emulator and not self.use_curses
+        self.enable_keyboard = not self.use_curses
 
     def start(self):
         """Start the controller"""
@@ -351,7 +484,7 @@ class IntegratedLEDController:
         self.process_thread = threading.Thread(target=self._process_loop, daemon=True)
         self.process_thread.start()
 
-        # Start keyboard input thread (only in emulator mode)
+        # Start keyboard input thread (only in simulator mode)
         if self.enable_keyboard:
             self.keyboard_thread = threading.Thread(target=self._keyboard_loop, daemon=True)
             self.keyboard_thread.start()
@@ -365,18 +498,45 @@ class IntegratedLEDController:
 
         while self.running:
             try:
+                # Check current state
+                state = self.config.state
+
+                if state == "off":
+                    # Turn off all LEDs
+                    self._clear_leds()
+                    time.sleep(0.1)
+                    continue
+
+                elif state == "rainbow":
+                    # Rainbow mode - no audio data needed
+                    self._render_rainbow()
+                    time.sleep(self.config.rainbow_speed / 1000.0)
+                    continue
+
+                # Audio reactive modes (audio_static or audio_dynamic)
                 # Receive UDP packet
                 audio_data = self.udp_receiver.receive()
 
                 if audio_data:
                     no_data_warning_shown = False
 
-                    # Update audio data
-                    self.fft_result = audio_data['fft_result']
-                    self.sample_agc = audio_data['sample_agc']
-                    self.sample_peak = audio_data['sample_peak']
-                    self.fft_major_peak = audio_data.get('fft_major_peak', 120.0)
-                    self.fft_magnitude = audio_data.get('fft_magnitude', 0.0)
+                    # Update audio data with volume compensation
+                    comp = self.config.volume_compensation if not self.config.auto_gain else 1.0
+                    self.fft_result = audio_data["fft_result"]
+                    self.sample_agc = int(min(255, audio_data["sample_agc"] * comp))
+                    self.sample_peak = audio_data["sample_peak"]
+                    self.fft_major_peak = audio_data.get("fft_major_peak", 120.0)
+                    self.fft_magnitude = audio_data.get("fft_magnitude", 0.0)
+
+                    # Handle effect rotation in audio_dynamic mode
+                    if state == "audio_dynamic" and self.config.rotation_enabled:
+                        if time.time() - self.last_rotation_time >= self.config.rotation_period:
+                            self._next_effect()
+                            self.last_rotation_time = time.time()
+                    elif state == "audio_static":
+                        # Ensure we're using the configured static effect
+                        if self.current_effect != self.config.static_effect:
+                            self.set_effect(self.config.static_effect)
 
                     # Update LEDs
                     self._update_leds()
@@ -392,12 +552,13 @@ class IntegratedLEDController:
             except Exception as e:
                 print(f"❌ Processing error: {e}")
                 import traceback
+
                 traceback.print_exc()
                 time.sleep(0.1)
 
     def _update_leds(self):
         """Update LED colors based on current effect"""
-        self.effect_state['time'] += 1
+        self.effect_state["time"] += 1
 
         if self.current_effect == "spectrum_bars":
             self._effect_spectrum_bars()
@@ -425,6 +586,44 @@ class IntegratedLEDController:
             self._effect_beat_pulse()
         else:
             self._effect_spectrum_bars()
+
+    def _clear_leds(self):
+        """Turn off all LEDs"""
+        for i in range(self.num_leds):
+            self.strip.setPixelColor(i, Color(0, 0, 0))
+        self.strip.show()
+
+    def _render_rainbow(self):
+        """Render rainbow pattern (based on ws2812_rainbow.py)"""
+        for i in range(self.num_leds):
+            pixel_index = (i * 256 // self.num_leds) + self.rainbow_offset
+            color = self._wheel(pixel_index & 255)
+            self.strip.setPixelColor(i, color)
+        self.strip.show()
+        self.rainbow_offset = (self.rainbow_offset + 1) % 256
+
+    def _wheel(self, pos):
+        """Generate rainbow colors across 0-255 positions (from ws2812_rainbow.py)"""
+        # Apply brightness scaling
+        brightness_factor = self.config.rainbow_brightness / 255.0
+
+        if pos < 85:
+            r = int(pos * 3 * brightness_factor)
+            g = int((255 - pos * 3) * brightness_factor)
+            b = 0
+            return Color(g, r, b)  # GRB order
+        elif pos < 170:
+            pos -= 85
+            r = int((255 - pos * 3) * brightness_factor)
+            g = 0
+            b = int(pos * 3 * brightness_factor)
+            return Color(g, r, b)  # GRB order
+        else:
+            pos -= 170
+            r = 0
+            g = int(pos * 3 * brightness_factor)
+            b = int((255 - pos * 3) * brightness_factor)
+            return Color(g, r, b)  # GRB order
 
     def _effect_spectrum_bars(self):
         """Spectrum bars effect (Pink/Purple/Blue palette, centered mirror)"""
@@ -545,7 +744,6 @@ class IntegratedLEDController:
     def _effect_frequency_wave(self):
         """Frequency wave - color changes based on dominant frequency (Pink/Purple/Blue palette)"""
         import math
-        import random
 
         fft = self.fft_result
         volume = self.sample_agc / 255.0
@@ -557,7 +755,9 @@ class IntegratedLEDController:
 
         # Map 80Hz-8000Hz to hue 320°(Pink) -> 280°(Purple) -> 200°(Blue)
         # Lower frequencies = Pink (320°), Higher frequencies = Blue (200°)
-        freq_normalized = (math.log10(freq_peak) - math.log10(80)) / (math.log10(8000) - math.log10(80))
+        freq_normalized = (math.log10(freq_peak) - math.log10(80)) / (
+            math.log10(8000) - math.log10(80)
+        )
         hue = 320 - (freq_normalized * 120)  # 320 -> 200
         if hue < 0:
             hue += 360
@@ -592,7 +792,6 @@ class IntegratedLEDController:
 
     def _effect_blurz(self):
         """Blurz - FFT bands create colorful blurred spots"""
-        import random
 
         fft = self.fft_result
 
@@ -644,15 +843,15 @@ class IntegratedLEDController:
             self.strip.setPixelColor(i, Color(g, r, b))
 
         # Store volume history for color variation
-        self.effect_state['pixel_history'].append(int(self.sample_agc))
+        self.effect_state["pixel_history"].append(int(self.sample_agc))
 
         # Add random pixels based on volume
         num_pixels = int(volume * 8) + 1
         for _ in range(num_pixels):
             pos = random.randint(0, self.num_leds - 1)
             # Color based on recent volume history
-            color_idx = random.randint(0, len(self.effect_state['pixel_history']) - 1)
-            hue = (self.effect_state['pixel_history'][color_idx] + color_idx * 16) % 360
+            color_idx = random.randint(0, len(self.effect_state["pixel_history"]) - 1)
+            hue = (self.effect_state["pixel_history"][color_idx] + color_idx * 16) % 360
 
             r, g, b = self._hsv_to_rgb(hue, 1.0, volume * 1.5)
             self.strip.setPixelColor(pos, Color(g, r, b))
@@ -683,7 +882,7 @@ class IntegratedLEDController:
             size = int((volume / 255.0) * 8) + 1
 
             # Color based on time
-            hue = (self.effect_state['time'] * 2) % 360
+            hue = (self.effect_state["time"] * 2) % 360
             r, g, b = self._hsv_to_rgb(hue, 1.0, 1.0)
 
             for i in range(size):
@@ -710,40 +909,44 @@ class IntegratedLEDController:
 
         # Create new ripple on beat (lower threshold for more ripples)
         if beat and volume > 0.15:  # Lower threshold: 0.2 -> 0.15
-            hue = (self.effect_state['time'] * 5) % 360
+            hue = (self.effect_state["time"] * 5) % 360
             # Boost initial brightness
             initial_brightness = min(1.0, volume * 1.5 + 0.3)  # Brighter + base brightness
-            self.effect_state['ripple_positions'].append({
-                'pos': self.num_leds // 2,
-                'radius': 0,
-                'hue': hue,
-                'brightness': initial_brightness
-            })
+            self.effect_state["ripple_positions"].append(
+                {
+                    "pos": self.num_leds // 2,
+                    "radius": 0,
+                    "hue": hue,
+                    "brightness": initial_brightness,
+                }
+            )
 
         # Update and draw ripples
         active_ripples = []
-        for ripple in self.effect_state['ripple_positions']:
-            ripple['radius'] += 0.5
+        for ripple in self.effect_state["ripple_positions"]:
+            ripple["radius"] += 0.5
 
             # Draw ripple
-            center = ripple['pos']
-            radius = int(ripple['radius'])
+            center = ripple["pos"]
+            radius = int(ripple["radius"])
 
             for offset in [-radius, radius]:
                 pos = center + offset
                 if 0 <= pos < self.num_leds and radius < self.num_leds // 2:
                     # Slower brightness decay for brighter ripples
-                    decay = (ripple['radius'] / (self.num_leds // 2)) ** 0.7  # Power < 1 = slower decay
-                    brightness = ripple['brightness'] * (1 - decay)
+                    decay = (
+                        ripple["radius"] / (self.num_leds // 2)
+                    ) ** 0.7  # Power < 1 = slower decay
+                    brightness = ripple["brightness"] * (1 - decay)
                     brightness = max(0, min(1.0, brightness))
-                    r, g, b = self._hsv_to_rgb(ripple['hue'], 1.0, brightness)
+                    r, g, b = self._hsv_to_rgb(ripple["hue"], 1.0, brightness)
                     self.strip.setPixelColor(pos, Color(g, r, b))
 
             # Keep ripple if still active
-            if ripple['radius'] < self.num_leds // 2:
+            if ripple["radius"] < self.num_leds // 2:
                 active_ripples.append(ripple)
 
-        self.effect_state['ripple_positions'] = active_ripples
+        self.effect_state["ripple_positions"] = active_ripples
         self.strip.show()
 
     def _effect_color_wave(self):
@@ -764,15 +967,15 @@ class IntegratedLEDController:
         hue = (bass * 320 + mids * 280 + highs * 200) / total
 
         # Smooth hue transition
-        self.effect_state['hue_offset'] = self.effect_state['hue_offset'] * 0.9 + hue * 0.1
+        self.effect_state["hue_offset"] = self.effect_state["hue_offset"] * 0.9 + hue * 0.1
 
         # Create wave pattern
         for i in range(self.num_leds):
             # Position-based hue variation
             pos_factor = i / self.num_leds
-            wave = math.sin((pos_factor * 6.28) + (self.effect_state['time'] * 0.1))
+            wave = math.sin((pos_factor * 6.28) + (self.effect_state["time"] * 0.1))
 
-            local_hue = (self.effect_state['hue_offset'] + wave * 40) % 360
+            local_hue = (self.effect_state["hue_offset"] + wave * 40) % 360
 
             # Softer saturation for pastel effect
             saturation = 0.7 + volume * 0.3
@@ -835,10 +1038,10 @@ class IntegratedLEDController:
 
         # Change hue on beat
         if beat:
-            self.effect_state['hue_offset'] = (self.effect_state['hue_offset'] + 30) % 360
+            self.effect_state["hue_offset"] = (self.effect_state["hue_offset"] + 30) % 360
 
         # Pulse brightness with volume
-        pulse = math.sin(self.effect_state['time'] * 0.2) * 0.3 + 0.7
+        pulse = math.sin(self.effect_state["time"] * 0.2) * 0.3 + 0.7
         brightness = volume * pulse
 
         # Beat flash override
@@ -848,7 +1051,7 @@ class IntegratedLEDController:
         # Apply color to all LEDs
         for i in range(self.num_leds):
             # Slight variation per LED
-            hue = (self.effect_state['hue_offset'] + i * 2) % 360
+            hue = (self.effect_state["hue_offset"] + i * 2) % 360
             r, g, b = self._hsv_to_rgb(hue, 1.0, brightness)
             self.strip.setPixelColor(i, Color(g, r, b))
 
@@ -862,15 +1065,15 @@ class IntegratedLEDController:
         x = c * (1 - abs((h * 6) % 2 - 1))
         m = v - c
 
-        if h < 1/6:
+        if h < 1 / 6:
             r, g, b = c, x, 0
-        elif h < 2/6:
+        elif h < 2 / 6:
             r, g, b = x, c, 0
-        elif h < 3/6:
+        elif h < 3 / 6:
             r, g, b = 0, c, x
-        elif h < 4/6:
+        elif h < 4 / 6:
             r, g, b = 0, x, c
-        elif h < 5/6:
+        elif h < 5 / 6:
             r, g, b = x, 0, c
         else:
             r, g, b = c, 0, x
@@ -899,7 +1102,11 @@ class IntegratedLEDController:
         """Print keyboard shortcuts hint"""
         if self.enable_keyboard and not self.use_curses:
             effect_idx = AVAILABLE_EFFECTS.index(self.current_effect) + 1
-            print(f"   [{effect_idx}/{len(AVAILABLE_EFFECTS)}] Press 'n'=next, 'p'=prev, 'h'=help, 'q'=quit", end='', flush=True)
+            print(
+                f"   [{effect_idx}/{len(AVAILABLE_EFFECTS)}] Press 'n'=next, 'p'=prev, 'h'=help, 'q'=quit",
+                end="",
+                flush=True,
+            )
 
     def _keyboard_loop(self):
         """Keyboard input loop for effect switching"""
@@ -922,17 +1129,17 @@ class IntegratedLEDController:
                 if select.select([sys.stdin], [], [], 0.1)[0]:
                     key = sys.stdin.read(1).lower()
 
-                    if key == 'q':
+                    if key == "q":
                         print("\n\n👋 Quit requested...")
                         self.running = False
                         break
-                    elif key == 'n':
+                    elif key == "n":
                         # Next effect
                         self._next_effect()
-                    elif key == 'p':
+                    elif key == "p":
                         # Previous effect
                         self._prev_effect()
-                    elif key == 'h':
+                    elif key == "h":
                         # Show help
                         self._show_keyboard_help()
                     elif key.isdigit():
@@ -989,7 +1196,7 @@ class IntegratedLEDController:
         print("🛑 Stopping controller...")
         self.running = False
 
-        if hasattr(self, 'process_thread'):
+        if hasattr(self, "process_thread"):
             self.process_thread.join(timeout=2)
 
         self.udp_receiver.stop()
@@ -1002,16 +1209,206 @@ class IntegratedLEDController:
         print("✅ Controller stopped")
 
 
+# Global controller instance for HTTP API
+_global_controller = None
+
+
+def create_http_api(controller, port=8080):
+    """Create Flask HTTP API for LED control"""
+    app = Flask(__name__)
+    CORS(app)  # Enable CORS for web interface
+
+    global _global_controller
+    _global_controller = controller
+
+    @app.route("/api/status", methods=["GET"])
+    def get_status():
+        """Get current status"""
+        return jsonify(
+            {
+                "running": controller.running,
+                "current_effect": controller.current_effect,
+                "config": controller.config.get_state(),
+                "audio_active": controller.udp_receiver.is_active(),
+                "volume": controller.sample_agc,
+                "available_effects": AVAILABLE_EFFECTS,
+            }
+        )
+
+    @app.route("/api/config", methods=["GET"])
+    def get_config():
+        """Get current configuration"""
+        return jsonify(controller.config.get_state())
+
+    @app.route("/api/config", methods=["POST"])
+    def update_config():
+        """Update configuration"""
+        try:
+            data = request.get_json()
+            controller.config.update(**data)
+
+            # Save configuration
+            controller.config.save()
+
+            # Reset rotation timer if rotation settings changed
+            if "rotation_period" in data or "rotation_enabled" in data:
+                controller.last_rotation_time = time.time()
+
+            return jsonify({"success": True, "config": controller.config.get_state()})
+        except Exception as e:
+            return jsonify({"success": False, "error": str(e)}), 400
+
+    @app.route("/api/state", methods=["POST"])
+    def set_state():
+        """Set LED state (on/off/rainbow/audio_static/audio_dynamic)"""
+        try:
+            data = request.get_json()
+            state = data.get("state")
+
+            if state not in ["off", "rainbow", "audio_static", "audio_dynamic"]:
+                return jsonify(
+                    {
+                        "success": False,
+                        "error": "Invalid state. Must be: off, rainbow, audio_static, or audio_dynamic",
+                    }
+                ), 400
+
+            controller.config.update(state=state)
+            controller.config.save()
+
+            return jsonify({"success": True, "state": state})
+        except Exception as e:
+            return jsonify({"success": False, "error": str(e)}), 400
+
+    @app.route("/api/effect", methods=["POST"])
+    def set_effect():
+        """Set current effect (for audio_static mode)"""
+        try:
+            data = request.get_json()
+            effect = data.get("effect")
+
+            if effect not in AVAILABLE_EFFECTS:
+                return jsonify(
+                    {
+                        "success": False,
+                        "error": f"Invalid effect. Must be one of: {AVAILABLE_EFFECTS}",
+                    }
+                ), 400
+
+            controller.set_effect(effect)
+            controller.config.update(static_effect=effect)
+            controller.config.save()
+
+            return jsonify({"success": True, "effect": effect})
+        except Exception as e:
+            return jsonify({"success": False, "error": str(e)}), 400
+
+    @app.route("/api/volume_compensation", methods=["POST"])
+    def set_volume_compensation():
+        """Set volume compensation"""
+        try:
+            data = request.get_json()
+            compensation = data.get("volume_compensation")
+            auto_gain = data.get("auto_gain")
+
+            updates = {}
+            if compensation is not None:
+                updates["volume_compensation"] = float(compensation)
+            if auto_gain is not None:
+                updates["auto_gain"] = bool(auto_gain)
+
+            controller.config.update(**updates)
+            controller.config.save()
+
+            return jsonify(
+                {
+                    "success": True,
+                    "volume_compensation": controller.config.volume_compensation,
+                    "auto_gain": controller.config.auto_gain,
+                }
+            )
+        except Exception as e:
+            return jsonify({"success": False, "error": str(e)}), 400
+
+    @app.route("/api/rotation", methods=["POST"])
+    def set_rotation():
+        """Set effect rotation settings"""
+        try:
+            data = request.get_json()
+            period = data.get("rotation_period")
+            enabled = data.get("rotation_enabled")
+
+            updates = {}
+            if period is not None:
+                updates["rotation_period"] = float(period)
+            if enabled is not None:
+                updates["rotation_enabled"] = bool(enabled)
+
+            controller.config.update(**updates)
+            controller.config.save()
+            controller.last_rotation_time = time.time()  # Reset timer
+
+            return jsonify(
+                {
+                    "success": True,
+                    "rotation_period": controller.config.rotation_period,
+                    "rotation_enabled": controller.config.rotation_enabled,
+                }
+            )
+        except Exception as e:
+            return jsonify({"success": False, "error": str(e)}), 400
+
+    @app.route("/api/rainbow", methods=["POST"])
+    def set_rainbow_settings():
+        """Set rainbow mode settings"""
+        try:
+            data = request.get_json()
+            speed = data.get("rainbow_speed")
+            brightness = data.get("rainbow_brightness")
+
+            updates = {}
+            if speed is not None:
+                updates["rainbow_speed"] = int(speed)
+            if brightness is not None:
+                updates["rainbow_brightness"] = int(brightness)
+
+            controller.config.update(**updates)
+            controller.config.save()
+
+            return jsonify(
+                {
+                    "success": True,
+                    "rainbow_speed": controller.config.rainbow_speed,
+                    "rainbow_brightness": controller.config.rainbow_brightness,
+                }
+            )
+        except Exception as e:
+            return jsonify({"success": False, "error": str(e)}), 400
+
+    # Start API server in background thread
+    def run_api():
+        app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False)
+
+    api_thread = threading.Thread(target=run_api, daemon=True)
+    api_thread.start()
+
+    print(f"🌐 HTTP API server started on port {port}")
+    print(f"   Access at: http://localhost:{port}/api/status")
+
+    return app
+
+
 def run_with_curses(stdscr, args):
     """Run controller with curses interface"""
     # Setup curses
     curses.curs_set(0)  # Hide cursor
-    stdscr.nodelay(1)   # Non-blocking input
-    stdscr.timeout(100) # 100ms timeout for getch()
+    stdscr.nodelay(1)  # Non-blocking input
+    stdscr.timeout(100)  # 100ms timeout for getch()
 
     # Check if terminal supports RGB/truecolor
     import os
-    supports_truecolor = os.environ.get('COLORTERM') in ('truecolor', '24bit')
+
+    supports_truecolor = os.environ.get("COLORTERM") in ("truecolor", "24bit")
 
     # Initialize color pairs if terminal supports color
     if curses.has_colors():
@@ -1031,20 +1428,24 @@ def run_with_curses(stdscr, args):
     controller = IntegratedLEDController(
         led_count=args.num_leds,
         led_pin=args.pin,
-        udp_port=args.udp_port,
-        udp_protocol=args.udp_protocol,
-        use_emulator=args.emulator,
-        curses_screen=stdscr
+        udp_port=args.port,
+        udp_protocol=args.format,
+        use_simulator=args.simulator,
+        curses_screen=stdscr,
     )
 
-    # Set display mode if emulator
-    if args.emulator:
+    # Set display mode if simulator
+    if args.simulator:
         controller.strip.display_mode = args.display
 
     controller.current_effect = args.effect
 
     if not controller.start():
         return 1
+
+    # Start HTTP API server if not disabled
+    if not args.no_api:
+        create_http_api(controller, port=args.api_port)
 
     # Store truecolor support flag in controller for LED drawing
     controller.supports_truecolor = supports_truecolor
@@ -1061,17 +1462,17 @@ def run_with_curses(stdscr, args):
             try:
                 key = stdscr.getch()
                 if key != -1:  # Key was pressed
-                    if key == ord('q') or key == ord('Q'):
+                    if key == ord("q") or key == ord("Q"):
                         controller.running = False
                         break
-                    elif key == ord('n') or key == ord('N'):
+                    elif key == ord("n") or key == ord("N"):
                         controller._next_effect()
-                    elif key == ord('p') or key == ord('P'):
+                    elif key == ord("p") or key == ord("P"):
                         controller._prev_effect()
-                    elif key == ord('h') or key == ord('H'):
+                    elif key == ord("h") or key == ord("H"):
                         _draw_help_screen(stdscr, controller)
                         stdscr.getch()  # Wait for keypress
-                    elif ord('0') <= key <= ord('9'):
+                    elif ord("0") <= key <= ord("9"):
                         idx = int(chr(key))
                         if idx == 0:
                             idx = 10
@@ -1083,7 +1484,7 @@ def run_with_curses(stdscr, args):
             current_time = time.time()
 
             # Update LED display more frequently than UI
-            if args.emulator and current_time - last_led_update > led_update_interval:
+            if args.simulator and current_time - last_led_update > led_update_interval:
                 try:
                     _update_led_display_only(stdscr, controller, args)
                 except:
@@ -1111,7 +1512,7 @@ def run_with_curses(stdscr, args):
 def _update_led_display_only(stdscr, controller, args):
     """Update only the LED display for better performance"""
     try:
-        if args.emulator:
+        if args.simulator:
             # Only redraw LED strip
             _draw_led_strip(stdscr, 3, controller)  # Line 3 is where LEDs start
     except:
@@ -1134,7 +1535,7 @@ def _draw_curses_ui(stdscr, controller, args):
     line = 2
 
     # Draw LED strip visualization
-    if args.emulator:
+    if args.simulator:
         try:
             led_lines = (controller.num_leds * 2) // (width - 4) + 1  # Estimate lines needed
             led_lines = min(led_lines, 3)  # Cap at 3 lines
@@ -1145,7 +1546,7 @@ def _draw_curses_ui(stdscr, controller, args):
             pass
 
     # Status section
-    mode = "🔮 EMULATOR" if args.emulator else "💡 REAL LED"
+    mode = "🔮 SIMULATOR" if args.simulator else "💡 REAL LED"
     status = "📡 CONNECTED" if controller.udp_receiver.is_active() else "📡 WAITING..."
 
     try:
@@ -1154,7 +1555,12 @@ def _draw_curses_ui(stdscr, controller, args):
         stdscr.addstr(line, 2, "Mode:", curses.A_BOLD)
         stdscr.addstr(line, 15, mode, curses.color_pair(2))
         stdscr.addstr(line, 35, "Status:", curses.A_BOLD)
-        stdscr.addstr(line, 50, status, curses.color_pair(1) if controller.udp_receiver.is_active() else curses.color_pair(3))
+        stdscr.addstr(
+            line,
+            50,
+            status,
+            curses.color_pair(1) if controller.udp_receiver.is_active() else curses.color_pair(3),
+        )
     except:
         pass
     line += 1
@@ -1165,7 +1571,12 @@ def _draw_curses_ui(stdscr, controller, args):
         stdscr.move(line, 0)
         stdscr.clrtoeol()
         stdscr.addstr(line, 2, "Effect:", curses.A_BOLD)
-        stdscr.addstr(line, 15, f"[{effect_idx}/{len(AVAILABLE_EFFECTS)}] {controller.current_effect}", curses.color_pair(5) | curses.A_BOLD)
+        stdscr.addstr(
+            line,
+            15,
+            f"[{effect_idx}/{len(AVAILABLE_EFFECTS)}] {controller.current_effect}",
+            curses.color_pair(5) | curses.A_BOLD,
+        )
     except:
         pass
     line += 2
@@ -1215,7 +1626,12 @@ def _draw_curses_ui(stdscr, controller, args):
         stdscr.move(line, 0)
         stdscr.clrtoeol()
         stdscr.addstr(line, 2, "Beat:")
-        stdscr.addstr(line, 15, beat_status, curses.color_pair(4) | curses.A_BOLD if controller.sample_peak > 0 else 0)
+        stdscr.addstr(
+            line,
+            15,
+            beat_status,
+            curses.color_pair(4) | curses.A_BOLD if controller.sample_peak > 0 else 0,
+        )
         line += 2
 
         # Frequency info
@@ -1286,9 +1702,9 @@ def _draw_led_strip_rgb(stdscr, start_line, controller):
         for i in range(num_leds):
             # Get pixel color
             color_value = controller.strip.getPixelColor(i)
-            r = ((color_value >> 16) & 0xFF)
-            g = ((color_value >> 8) & 0xFF)
-            b = (color_value & 0xFF)
+            r = (color_value >> 16) & 0xFF
+            g = (color_value >> 8) & 0xFF
+            b = color_value & 0xFF
 
             # Apply brightness
             r = int(r * brightness_factor)
@@ -1308,7 +1724,7 @@ def _draw_led_strip_rgb(stdscr, start_line, controller):
                 # This bypasses curses but works in most modern terminals
                 line_str = " ".join(current_line)
                 # Move cursor to position (1-indexed) and print with clear to end of line
-                sys.stdout.write(f"\033[{y+1};{x_start+1}H{line_str}\033[K")
+                sys.stdout.write(f"\033[{y + 1};{x_start + 1}H{line_str}\033[K")
 
                 # Reset for next line
                 current_line = []
@@ -1324,14 +1740,14 @@ def _draw_led_strip_rgb(stdscr, start_line, controller):
         # Don't refresh here - let the main loop handle it
         # stdscr.refresh()
 
-    except Exception as e:
+    except Exception:
         pass
 
 
 def _draw_led_strip(stdscr, start_line, controller):
     """Draw LED strip visualization"""
     # Check if controller supports truecolor
-    if hasattr(controller, 'supports_truecolor') and controller.supports_truecolor:
+    if hasattr(controller, "supports_truecolor") and controller.supports_truecolor:
         _draw_led_strip_rgb(stdscr, start_line, controller)
     else:
         # Fallback to basic curses colors
@@ -1368,9 +1784,9 @@ def _draw_led_strip_basic(stdscr, start_line, controller):
         for i in range(num_leds):
             # Get pixel color
             color_value = controller.strip.getPixelColor(i)
-            r = ((color_value >> 16) & 0xFF)
-            g = ((color_value >> 8) & 0xFF)
-            b = (color_value & 0xFF)
+            r = (color_value >> 16) & 0xFF
+            g = (color_value >> 8) & 0xFF
+            b = color_value & 0xFF
 
             # Apply brightness
             r = int(r * brightness_factor)
@@ -1407,7 +1823,7 @@ def _draw_led_strip_basic(stdscr, start_line, controller):
             except:
                 pass
 
-    except Exception as e:
+    except Exception:
         pass
 
 
@@ -1459,7 +1875,11 @@ def _draw_help_screen(stdscr, controller):
             marker = "👉" if effect == controller.current_effect else "  "
             key = str(i % 10)
             try:
-                attr = curses.color_pair(5) | curses.A_BOLD if effect == controller.current_effect else 0
+                attr = (
+                    curses.color_pair(5) | curses.A_BOLD
+                    if effect == controller.current_effect
+                    else 0
+                )
                 stdscr.addstr(line, 4, f"{marker} [{key}] {effect}", attr)
                 line += 1
             except:
@@ -1474,58 +1894,100 @@ def _draw_help_screen(stdscr, controller):
 
 def main():
     """Main entry point"""
-    parser = argparse.ArgumentParser(description='Integrated Audio Reactive LED Controller')
+    parser = argparse.ArgumentParser(description="Integrated Audio Reactive LED Controller")
 
     # LED options
-    parser.add_argument('-n', '--num-leds', type=int, default=LED_COUNT,
-                       help=f'Number of LEDs (default: {LED_COUNT})')
-    parser.add_argument('-p', '--pin', type=int, default=LED_PIN,
-                       help=f'GPIO pin (default: {LED_PIN})')
-    parser.add_argument('-e', '--effect', default='spectrum_bars',
-                       choices=['spectrum_bars', 'vu_meter', 'rainbow_spectrum', 'fire',
-                               'frequency_wave', 'blurz', 'pixels', 'puddles', 'ripple',
-                               'color_wave', 'waterfall', 'beat_pulse'],
-                       help='LED effect (default: spectrum_bars)')
+    parser.add_argument(
+        "-n",
+        "--num-leds",
+        type=int,
+        default=LED_COUNT_SIM,
+        help=f"Number of LEDs (default: {LED_COUNT_SIM})",
+    )
+    parser.add_argument(
+        "-p", "--pin", type=int, default=LED_PIN, help=f"GPIO pin (default: {LED_PIN})"
+    )
+    parser.add_argument(
+        "-e",
+        "--effect",
+        default="spectrum_bars",
+        choices=[
+            "spectrum_bars",
+            "vu_meter",
+            "rainbow_spectrum",
+            "fire",
+            "frequency_wave",
+            "blurz",
+            "pixels",
+            "puddles",
+            "ripple",
+            "color_wave",
+            "waterfall",
+            "beat_pulse",
+        ],
+        help="LED effect (default: spectrum_bars)",
+    )
 
-    # Emulator options
-    parser.add_argument('--emulator', '--emu', action='store_true',
-                       help='Use terminal emulator instead of real LEDs')
-    parser.add_argument('--display', default='horizontal',
-                       choices=['horizontal', 'vertical', 'grid'],
-                       help='Emulator display mode (default: horizontal)')
-    parser.add_argument('--curses', action='store_true',
-                       help='Enable curses UI (interactive terminal interface, emulator only)')
+    # Simulator options
+    parser.add_argument(
+        "--simulator",
+        action="store_true",
+        help="Use terminal simulator instead of real LEDs",
+    )
+    parser.add_argument(
+        "--display",
+        default="horizontal",
+        choices=["horizontal", "vertical", "grid"],
+        help="Simulator display mode (default: horizontal)",
+    )
+    parser.add_argument(
+        "--curses",
+        action="store_true",
+        help="Enable curses UI (interactive terminal interface, simulator only)",
+    )
 
     # UDP options
-    parser.add_argument('--udp-port', type=int, default=31337,
-                       help='UDP port to listen on (default: 31337)')
-    parser.add_argument('--udp-protocol', default='auto',
-                       choices=['auto', 'wled', 'eqstreamer'],
-                       help='UDP protocol: auto, wled, or eqstreamer (default: auto)')
+    parser.add_argument(
+        "--port", type=int, default=31337, help="UDP port to listen on (default: 31337)"
+    )
+    parser.add_argument(
+        "--format",
+        default="auto",
+        choices=["auto", "wled", "eqstreamer"],
+        help="UDP protocol: auto, wled, or eqstreamer (default: auto)",
+    )
+
+    # HTTP API options
+    parser.add_argument("--api-port", type=int, default=8080, help="HTTP API port (default: 8080)")
+    parser.add_argument(
+        "--no-api",
+        action="store_true",
+        help="Disable HTTP API server",
+    )
 
     args = parser.parse_args()
 
     print("=" * 60)
     print("🎵 Integrated Audio Reactive LED Controller")
-    if args.emulator:
+    if args.simulator:
         if not args.curses:
-            print("   🔮 EMULATOR MODE (Simple Text UI)")
+            print("   🔮 SIMULATOR MODE (Simple Text UI)")
         else:
-            print("   🔮 EMULATOR MODE (Curses UI)")
+            print("   🔮 SIMULATOR MODE (Curses UI)")
     else:
         print("   💡 REAL LED MODE")
     print("=" * 60)
     print(f"📊 LEDs: {args.num_leds} on GPIO {args.pin}")
     print(f"🎨 Effect: {args.effect}")
 
-    if args.emulator:
+    if args.simulator:
         print(f"🖥️  Display: {args.display}")
 
-    print(f"📡 UDP: port {args.udp_port}, protocol {args.udp_protocol}")
+    print(f"📡 UDP: port {args.port}, format {args.format}")
     print()
 
-    # Use curses interface for emulator mode (if --curses is specified)
-    if args.emulator and args.curses:
+    # Use curses interface for simulator mode (if --curses is specified)
+    if args.simulator and args.curses:
         print("🚀 Starting curses interface...")
         print("   (Press any key to continue)")
         time.sleep(1)
@@ -1536,17 +1998,17 @@ def main():
             print("   Falling back to simple mode...")
             # Fall through to simple mode
 
-    # Simple mode (default for emulator, or real LEDs)
+    # Simple mode (default for simulator, or real LEDs)
     controller = IntegratedLEDController(
         led_count=args.num_leds,
         led_pin=args.pin,
-        udp_port=args.udp_port,
-        udp_protocol=args.udp_protocol,
-        use_emulator=args.emulator
+        udp_port=args.port,
+        udp_protocol=args.format,
+        use_simulator=args.simulator,
     )
 
-    # Set display mode if emulator
-    if args.emulator:
+    # Set display mode if simulator
+    if args.simulator:
         controller.strip.display_mode = args.display
 
     controller.current_effect = args.effect
@@ -1555,19 +2017,24 @@ def main():
         print("❌ Failed to start controller")
         return 1
 
+    # Start HTTP API server if not disabled
+    if not args.no_api:
+        create_http_api(controller, port=args.api_port)
+
     print("🚀 Running!")
-    print(f"   Waiting for UDP audio data on port {args.udp_port}")
+    print(f"   Waiting for UDP audio data on port {args.port}")
     print()
     print("   Supported sources:")
     print("   - LQS-IoT_EqStreamer (32-band)")
     print("   - WLED Audio Sync V1/V2 (16-band)")
     print()
     print("   Test with:")
-    print(f"   cd ../LQS-IoT_EqStreamer && dotnet run [your_rpi_ip]")
+    print("   cd ../LQS-IoT_EqStreamer && dotnet run [your_rpi_ip]")
 
-    if args.emulator and not args.curses:
+    if not args.curses:
         print()
-        print("⌨️  KEYBOARD CONTROLS (Simple Mode):")
+        mode_label = "Simple Mode" if args.simulator else "Real LED Mode"
+        print(f"⌨️  KEYBOARD CONTROLS ({mode_label}):")
         print("   n = Next effect    p = Previous effect")
         print("   h = Show help      q = Quit")
         print("   1-9,0 = Jump to effect")
@@ -1586,7 +2053,7 @@ def main():
 
             # Print stats every 2 seconds
             if time.time() - last_stats_time > 2:
-                mode = "🔮 EMU" if args.emulator else "💡 LED"
+                mode = "🔮 EMU" if args.simulator else "💡 LED"
                 status = "📡 ✅" if controller.udp_receiver.is_active() else "📡 ⏳"
 
                 # Get bass/mid/high averages
@@ -1596,15 +2063,18 @@ def main():
                 highs = sum(fft[11:16]) / 5 if len(fft) >= 16 else 0
 
                 effect_name = controller.current_effect[:12].ljust(12)
-                print(f"\r{mode} {status} | "
-                      f"Effect: {effect_name} | "
-                      f"Vol: {controller.sample_agc:3d} | "
-                      f"Bass: {bass:3.0f} | "
-                      f"Mids: {mids:3.0f} | "
-                      f"Highs: {highs:3.0f} | "
-                      f"Beat: {'🔥' if controller.sample_peak > 0 else '  '} | "
-                      f"Pkts: {controller.udp_receiver.packet_count:5d}     ",
-                      end='', flush=True)
+                print(
+                    f"\r{mode} {status} | "
+                    f"Effect: {effect_name} | "
+                    f"Vol: {controller.sample_agc:3d} | "
+                    f"Bass: {bass:3.0f} | "
+                    f"Mids: {mids:3.0f} | "
+                    f"Highs: {highs:3.0f} | "
+                    f"Beat: {'🔥' if controller.sample_peak > 0 else '  '} | "
+                    f"Pkts: {controller.udp_receiver.packet_count:5d}     ",
+                    end="",
+                    flush=True,
+                )
 
                 last_stats_time = time.time()
 
@@ -1617,5 +2087,5 @@ def main():
     return 0
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     exit(main())

@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """
-Terminal-based LED Emulator
+Terminal-based LED Simulator
 Simulates WS2812B LED strip in the terminal using ANSI colors
 Compatible with rpi_ws281x API
 Supports continuous UDP reception like WLED
 """
 
-import sys
-import time
-import threading
 import socket
+import sys
+import threading
+import time
 
 
 class Color:
@@ -39,26 +39,35 @@ class Color:
         return f"Color(r={self.r}, g={self.g}, b={self.b})"
 
 
-class PixelStripEmulator:
+class PixelStripSimulator:
     """
-    Terminal-based LED strip emulator
+    Terminal-based LED strip simulator
     Compatible with rpi_ws281x.PixelStrip API
     """
 
-    def __init__(self, num_leds, pin=18, freq_hz=800000, dma=10,
-                 invert=False, brightness=255, channel=0, strip_type=None):
+    def __init__(
+        self,
+        num_leds,
+        pin=18,
+        freq_hz=800000,
+        dma=10,
+        invert=False,
+        brightness=255,
+        channel=0,
+        strip_type=None,
+    ):
         """
-        Initialize LED emulator
+        Initialize LED simulator
 
         Args:
             num_leds: Number of LEDs to emulate
-            pin: GPIO pin (ignored in emulator)
-            freq_hz: Signal frequency (ignored in emulator)
-            dma: DMA channel (ignored in emulator)
-            invert: Invert signal (ignored in emulator)
+            pin: GPIO pin (ignored in simulator)
+            freq_hz: Signal frequency (ignored in simulator)
+            dma: DMA channel (ignored in simulator)
+            invert: Invert signal (ignored in simulator)
             brightness: Global brightness (0-255)
-            channel: PWM channel (ignored in emulator)
-            strip_type: LED type (ignored in emulator)
+            channel: PWM channel (ignored in simulator)
+            strip_type: LED type (ignored in simulator)
         """
         self.num_leds = num_leds
         self.brightness = brightness
@@ -73,16 +82,16 @@ class PixelStripEmulator:
         self.silent_mode = False  # Suppress printing (for curses mode)
 
         if not self.silent_mode:
-            print(f"🔮 LED Emulator initialized: {num_leds} LEDs")
+            print(f"🔮 LED Simulator initialized: {num_leds} LEDs")
 
     def begin(self):
-        """Initialize the emulator (clear screen)"""
+        """Initialize the simulator (clear screen)"""
         if self.silent_mode:
             return
         # Clear screen and hide cursor
         print("\033[2J\033[H\033[?25l", end="", flush=True)
         print("=" * 80)
-        print("🔮 Terminal LED Emulator")
+        print("🔮 Terminal LED Simulator")
         print("=" * 80)
         print()
 
@@ -190,7 +199,10 @@ class PixelStripEmulator:
         if not self.compact:
             print()
             active_leds = sum(1 for p in self.pixels if p.r > 0 or p.g > 0 or p.b > 0)
-            print(f"LEDs: {active_leds}/{self.num_leds} active | Brightness: {self.brightness}" + " " * 20)
+            print(
+                f"LEDs: {active_leds}/{self.num_leds} active | Brightness: {self.brightness}"
+                + " " * 20
+            )
 
     def _render_vertical(self):
         """Render LEDs vertically"""
@@ -241,22 +253,24 @@ class PixelStripEmulator:
 
         print()
         active_leds = sum(1 for p in self.pixels if p.r > 0 or p.g > 0 or p.b > 0)
-        print(f"LEDs: {active_leds}/{self.num_leds} active | Brightness: {self.brightness}" + " " * 20)
+        print(
+            f"LEDs: {active_leds}/{self.num_leds} active | Brightness: {self.brightness}" + " " * 20
+        )
 
     def __del__(self):
         """Cleanup - show cursor"""
         print("\033[?25h", end="", flush=True)
 
 
-class LEDEmulatorUDP:
+class LEDSimulatorUDP:
     """
-    UDP-enabled LED Emulator
+    UDP-enabled LED Simulator
     Continuously receives LED data via UDP and displays in terminal
     """
 
     def __init__(self, num_leds=60, udp_port=21324, fps=30):
         """
-        Initialize UDP LED emulator
+        Initialize UDP LED simulator
 
         Args:
             num_leds: Number of LEDs
@@ -268,7 +282,7 @@ class LEDEmulatorUDP:
         self.fps = fps
         self.frame_delay = 1.0 / fps
 
-        self.strip = PixelStripEmulator(num_leds, 18)
+        self.strip = PixelStripSimulator(num_leds, 18)
         self.running = False
         self.packet_count = 0
 
@@ -278,15 +292,15 @@ class LEDEmulatorUDP:
         self.sock.settimeout(0.1)
 
     def start(self):
-        """Start the UDP emulator"""
+        """Start the UDP simulator"""
         try:
-            self.sock.bind(('0.0.0.0', self.udp_port))
+            self.sock.bind(("0.0.0.0", self.udp_port))
             self.strip.begin()
 
-            print(f"\n📡 UDP LED Emulator Mode")
+            print("\n📡 UDP LED Simulator Mode")
             print(f"   Listening on UDP port {self.udp_port}")
             print(f"   Display FPS: {self.fps}")
-            print(f"   Press Ctrl+C to stop")
+            print("   Press Ctrl+C to stop")
             print()
 
             self.running = True
@@ -304,6 +318,7 @@ class LEDEmulatorUDP:
         except Exception as e:
             print(f"\n❌ Error: {e}")
             import traceback
+
             traceback.print_exc()
             self.running = False
         finally:
@@ -347,7 +362,7 @@ class LEDEmulatorUDP:
         while i + 3 < len(data):
             index = data[i]
             if index < self.num_leds:
-                self.strip.setPixelColorRGB(index, data[i+1], data[i+2], data[i+3])
+                self.strip.setPixelColorRGB(index, data[i + 1], data[i + 2], data[i + 3])
             i += 4
 
     def _parse_drgb(self, data):
@@ -355,7 +370,7 @@ class LEDEmulatorUDP:
         i = 2
         led_index = 0
         while i + 2 < len(data) and led_index < self.num_leds:
-            self.strip.setPixelColorRGB(led_index, data[i], data[i+1], data[i+2])
+            self.strip.setPixelColorRGB(led_index, data[i], data[i + 1], data[i + 2])
             i += 3
             led_index += 1
 
@@ -364,7 +379,7 @@ class LEDEmulatorUDP:
         i = 2
         led_index = 0
         while i + 3 < len(data) and led_index < self.num_leds:
-            self.strip.setPixelColorRGB(led_index, data[i], data[i+1], data[i+2])
+            self.strip.setPixelColorRGB(led_index, data[i], data[i + 1], data[i + 2])
             i += 4
             led_index += 1
 
@@ -376,7 +391,7 @@ class LEDEmulatorUDP:
         i = 4
         led_index = start_index
         while i + 2 < len(data) and led_index < self.num_leds:
-            self.strip.setPixelColorRGB(led_index, data[i], data[i+1], data[i+2])
+            self.strip.setPixelColorRGB(led_index, data[i], data[i + 1], data[i + 2])
             i += 3
             led_index += 1
 
@@ -388,7 +403,7 @@ class LEDEmulatorUDP:
         i = 4
         led_index = start_index
         while i + 3 < len(data) and led_index < self.num_leds:
-            self.strip.setPixelColorRGB(led_index, data[i], data[i+1], data[i+2])
+            self.strip.setPixelColorRGB(led_index, data[i], data[i + 1], data[i + 2])
             i += 4
             led_index += 1
 
@@ -406,16 +421,16 @@ class LEDEmulatorUDP:
 
 
 # Compatibility aliases
-PixelStrip = PixelStripEmulator
+PixelStrip = PixelStripSimulator
 
 
 def demo():
-    """Demo the emulator"""
-    print("🔮 LED Emulator Demo")
+    """Demo the simulator"""
+    print("🔮 LED Simulator Demo")
     print()
 
     num_leds = 60
-    strip = PixelStripEmulator(num_leds)
+    strip = PixelStripSimulator(num_leds)
     strip.begin()
 
     try:
@@ -450,9 +465,9 @@ def demo():
 
         # Wipe colors
         colors = [
-            (255, 0, 0),    # Red
-            (0, 255, 0),    # Green
-            (0, 0, 255),    # Blue
+            (255, 0, 0),  # Red
+            (0, 255, 0),  # Green
+            (0, 0, 255),  # Blue
             (255, 255, 0),  # Yellow
             (0, 255, 255),  # Cyan
             (255, 0, 255),  # Magenta

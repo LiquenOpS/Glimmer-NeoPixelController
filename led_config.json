@@ -1,0 +1,11 @@
+{
+  "state": "rainbow",
+  "enabled": true,
+  "static_effect": "fire",
+  "rotation_enabled": true,
+  "rotation_period": 10.0,
+  "volume_compensation": 1.5,
+  "auto_gain": false,
+  "rainbow_speed": 10,
+  "rainbow_brightness": 100
+}

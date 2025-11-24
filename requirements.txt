@@ -1,7 +1,11 @@
 # Audio Reactive LED Controller Requirements
 
 # Core dependencies
-numpy>=1.19.0
+# numpy>=1.19.0
+
+# HTTP API server
+Flask>=2.0.0
+Flask-CORS>=3.0.0
 
 # LED Control (choose one)
 # For real Raspberry Pi:
@@ -11,7 +15,7 @@ rpi-ws281x>=4.3.0
 # No additional requirements - led_emulator.py uses only standard library
 
 # Audio input (optional - not needed for emulator demo mode)
-pyaudio>=0.2.11
+# pyaudio>=0.2.11
 
 # Optional: For UDP audio sync
 # No additional requirements needed (uses built-in socket)
@@ -19,12 +23,12 @@ pyaudio>=0.2.11
 # Installation guide:
 # ------------------
 # For development/testing (no hardware):
-#   pip3 install numpy
+#   pip3 install numpy Flask Flask-CORS
 #   (rpi-ws281x and pyaudio are optional)
 #
 # For Raspberry Pi (real LEDs):
 #   sudo apt-get install portaudio19-dev
-#   pip3 install numpy rpi-ws281x pyaudio
+#   pip3 install numpy Flask Flask-CORS rpi-ws281x pyaudio
 #
 # Minimal install (emulator only):
-#   pip3 install numpy
+#   pip3 install numpy Flask Flask-CORS
