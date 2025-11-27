@@ -1342,6 +1342,7 @@ def create_http_api(controller, port=8080):
         """
         try:
             data = request.get_json()
+            data = data["led_config"]
 
             # Convert dot notation to hierarchical structure
             data = _flatten_dot_notation(data)
