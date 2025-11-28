@@ -69,6 +69,7 @@ AVAILABLE_EFFECTS = [
     "beat_pulse",
     "white_segments",
     "white_arrow",
+    "white_marquee",
 ]
 ROTATABLE_EFFECTS = [
     "spectrum_bars",
@@ -648,6 +649,8 @@ class IntegratedLEDController:
             self._effect_white_segments()
         elif self.current_effect == "white_arrow":
             self._effect_white_arrow()
+        elif self.current_effect == "white_marquee":
+            self._effect_white_marquee()
         else:
             self._effect_spectrum_bars()
 
@@ -1305,6 +1308,37 @@ class IntegratedLEDController:
                 active_arrows.append(arrow)
 
         self.effect_state["arrow_positions"] = active_arrows
+        self.strip.show()
+
+    def _effect_white_marquee(self):
+        """Simple slow white marquee effect - moving light from start to end"""
+        # Clear all LEDs first
+        for i in range(self.num_leds):
+            self.strip.setPixelColor(i, Color(0, 0, 0))
+
+        # Calculate marquee position (slow movement)
+        # Use time to create continuous movement, wrap around for looping
+        marquee_speed = 0.3  # Pixels per frame (slow)
+        marquee_length = 10  # Length of lit section
+        marquee_pos = (self.effect_state["time"] * marquee_speed) % (self.num_leds + marquee_length)
+
+        # Draw marquee with fade effect
+        for i in range(self.num_leds):
+            distance_from_marquee = abs(i - marquee_pos)
+
+            if distance_from_marquee <= marquee_length:
+                # Calculate brightness with fade (brighter at center, dimmer at edges)
+                normalized_distance = distance_from_marquee / marquee_length
+                brightness = (1.0 - normalized_distance) ** 2  # Quadratic fade
+                brightness = max(0.0, min(1.0, brightness))
+
+                # White color with calculated brightness
+                r = int(255 * brightness)
+                g = int(255 * brightness)
+                b = int(255 * brightness)
+
+                self.strip.setPixelColor(i, Color(g, r, b))
+
         self.strip.show()
 
     @staticmethod
