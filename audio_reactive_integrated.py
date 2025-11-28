@@ -1244,7 +1244,7 @@ class IntegratedLEDController:
 
         arrow_speed = 2.0  # Pixels per frame
         arrow_length = 8  # Length of arrow tail
-        min_arrow_interval = 0.2  # Minimum seconds between arrows (adjust to control frequency)
+        min_arrow_interval = 0.4  # Minimum seconds between arrows (adjust to control frequency)
 
         # Clear all LEDs first
         for i in range(self.num_leds):
