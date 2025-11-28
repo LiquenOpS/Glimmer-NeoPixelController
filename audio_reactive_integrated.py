@@ -717,34 +717,61 @@ class IntegratedLEDController:
         self.strip.show()
 
     def _effect_vu_meter(self):
-        """VU meter effect (centered, expands from middle)"""
-        volume = self.sample_agc
-        center = self.num_leds // 2
+        """VU meter effect (segmented, expands from start)"""
+        fft = self.fft_result
+        num_segments = 8  # Number of segments to split the strip into
 
-        # Calculate how many LEDs to light from center (half on each side)
-        lit_half = int(((volume / 255.0) ** 0.3) * center)
-        lit_half = min(lit_half, center)
-
+        # Clear all LEDs first
         for i in range(self.num_leds):
-            # Calculate distance from center
-            distance_from_center = abs(i - center)
+            self.strip.setPixelColor(i, Color(0, 0, 0))
 
-            if distance_from_center < lit_half:
-                # LED should be lit - color based on distance from center
-                # Center = Blue (200°), Edge = Pink (320°)
-                ratio = distance_from_center / max(center, 1)
-                hue = 260 + (ratio * 60)  # 200° (blue) -> 320° (pink)
+        # Calculate LEDs per segment
+        leds_per_segment = self.num_leds // num_segments
 
-                # Brightness decreases slightly towards edges
-                brightness = 1.0 - ratio * 0.2
-                saturation = 0.7 + ratio * 0.3
+        # Process each segment
+        for seg_idx in range(num_segments):
+            # Map segment to FFT bins (distribute FFT_BINS across segments)
+            # Each segment gets 2 FFT bins (16 bins / 8 segments = 2 bins per segment)
+            bins_per_segment = FFT_BINS // num_segments
+            start_bin = seg_idx * bins_per_segment
+            end_bin = min(start_bin + bins_per_segment, FFT_BINS)
 
-                r, g, b = self._hsv_to_rgb(hue, saturation, brightness)
-                color = Color(g, r, b)  # GRB order
-            else:
-                color = Color(0, 0, 0)
+            # Calculate average intensity for this segment's frequency range
+            segment_intensity = sum(fft[start_bin:end_bin]) / (end_bin - start_bin) if end_bin > start_bin else 0
+            segment_intensity = min(255, segment_intensity)
 
-            self.strip.setPixelColor(i, color)
+            # Calculate how many LEDs to light in this segment (height)
+            # Use volume compensation if enabled
+            volume_factor = self.config.volume_compensation if not self.config.auto_gain else 1.0
+            height_ratio = (segment_intensity / 255.0) * volume_factor
+            height_ratio = min(1.0, height_ratio)
+
+            # Light LEDs from bottom (start of segment) upward
+            num_lit = int(height_ratio * leds_per_segment)
+
+            # Calculate segment boundaries
+            seg_start = seg_idx * leds_per_segment
+            seg_end = min(seg_start + leds_per_segment, self.num_leds)
+
+            # Light LEDs in this segment with color gradient
+            for i in range(seg_start, seg_start + num_lit):
+                if i < seg_end:
+                    # Calculate overall position in strip (0.0 to 1.0)
+                    pos_in_strip = i / max(self.num_leds - 1, 1)
+
+                    # Color based on position: Center (start) = Blue (260°), Edge (end) = Pink (320°)
+                    # Map position to hue: 0.0 -> 260° (blue), 1.0 -> 320° (pink)
+                    hue = 260 + (pos_in_strip * 60)  # 260° (blue) -> 320° (pink)
+
+                    # Brightness decreases slightly towards edges
+                    brightness = 1.0 - pos_in_strip * 0.2
+                    saturation = 0.7 + pos_in_strip * 0.3
+
+                    # Apply segment intensity to brightness
+                    brightness *= (segment_intensity / 255.0)
+
+                    r, g, b = self._hsv_to_rgb(hue, saturation, brightness)
+                    self.strip.setPixelColor(i, Color(g, r, b))
 
         self.strip.show()
 
@@ -800,25 +827,9 @@ class IntegratedLEDController:
         self.strip.show()
 
     def _effect_frequency_wave(self):
-        """Frequency wave - color changes based on dominant frequency (Pink/Purple/Blue palette)"""
-        import math
-
+        """Frequency wave - segmented, each segment expands from its center"""
         fft = self.fft_result
-        volume = self.sample_agc / 255.0
-
-        # Map frequency to hue (low freq = pink, high freq = blue)
-        freq_peak = self.fft_major_peak
-        if freq_peak < 80:
-            freq_peak = 80
-
-        # Map 80Hz-8000Hz to hue 320°(Pink) -> 280°(Purple) -> 200°(Blue)
-        # Lower frequencies = Pink (320°), Higher frequencies = Blue (200°)
-        freq_normalized = (math.log10(freq_peak) - math.log10(80)) / (
-            math.log10(8000) - math.log10(80)
-        )
-        hue = 320 - (freq_normalized * 120)  # 320 -> 200
-        if hue < 0:
-            hue += 360
+        num_segments = 8  # Number of segments to split the strip into
 
         # Fade existing LEDs
         for i in range(self.num_leds):
@@ -832,19 +843,60 @@ class IntegratedLEDController:
             b = int(b * 0.90)
             self.strip.setPixelColor(i, Color(g, r, b))
 
-        # Add new color in center
-        if volume > 0.1:
-            brightness = min(1.0, volume * 2)
-            saturation = 0.7 + volume * 0.3  # Softer pastel colors
-            r, g, b = self._hsv_to_rgb(hue, saturation, brightness)
-            center = self.num_leds // 2
-            self.strip.setPixelColor(center, Color(g, r, b))
+        # Calculate LEDs per segment
+        leds_per_segment = self.num_leds // num_segments
 
-            # Shift pixels outward
-            for i in range(self.num_leds - 1, center, -1):
-                self.strip.setPixelColor(i, self.strip.getPixelColor(i - 1))
-            for i in range(0, center):
-                self.strip.setPixelColor(i, self.strip.getPixelColor(i + 1))
+        # Process each segment
+        for seg_idx in range(num_segments):
+            # Map segment to FFT bins (distribute FFT_BINS across segments)
+            bins_per_segment = FFT_BINS // num_segments
+            start_bin = seg_idx * bins_per_segment
+            end_bin = min(start_bin + bins_per_segment, FFT_BINS)
+
+            # Calculate average intensity for this segment's frequency range
+            segment_intensity = sum(fft[start_bin:end_bin]) / (end_bin - start_bin) if end_bin > start_bin else 0
+            segment_intensity = min(255, segment_intensity)
+
+            # Calculate segment boundaries
+            seg_start = seg_idx * leds_per_segment
+            seg_end = min(seg_start + leds_per_segment, self.num_leds)
+            seg_center = (seg_start + seg_end) // 2
+
+            # Map segment frequency range to hue
+            # Each segment represents a frequency range
+            # Lower segments (lower bins) = Pink (320°), Higher segments (higher bins) = Blue (200°)
+            bin_normalized = (start_bin + end_bin) / 2.0 / FFT_BINS  # Average bin position (0.0 to 1.0)
+            hue = 320 - (bin_normalized * 120)  # 320° (Pink) -> 200° (Blue)
+            if hue < 0:
+                hue += 360
+
+            # Calculate how many LEDs to light from center (half on each side)
+            # Use volume compensation if enabled
+            volume_factor = self.config.volume_compensation if not self.config.auto_gain else 1.0
+            height_ratio = (segment_intensity / 255.0) * volume_factor
+            height_ratio = min(1.0, height_ratio)
+
+            # Calculate how many LEDs to light from segment center
+            seg_half_size = (seg_end - seg_start) // 2
+            lit_half = int(height_ratio * seg_half_size)
+            lit_half = min(lit_half, seg_half_size)
+
+            # Light LEDs from segment center outward
+            for i in range(seg_start, seg_end):
+                distance_from_center = abs(i - seg_center)
+
+                if distance_from_center < lit_half:
+                    # LED should be lit - color based on segment frequency
+                    # Brightness decreases slightly towards edges
+                    ratio = distance_from_center / max(seg_half_size, 1)
+                    brightness = 1.0 - ratio * 0.2
+                    saturation = 0.7 + ratio * 0.3
+
+                    # Apply segment intensity to brightness
+                    brightness *= (segment_intensity / 255.0)
+
+                    r, g, b = self._hsv_to_rgb(hue, saturation, brightness)
+                    self.strip.setPixelColor(i, Color(g, r, b))
 
         self.strip.show()
 
