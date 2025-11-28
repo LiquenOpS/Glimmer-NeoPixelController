@@ -1283,8 +1283,11 @@ class IntegratedLEDController:
                 if distance_from_head < 0:
                     distance_from_head = 0
 
-                # Calculate tail brightness (brighter at head, dimmer at tail)
-                tail_brightness = 1.0 - (distance_from_head / arrow_length)
+                # Calculate tail brightness with smooth fade (head brighter, tail darker)
+                # Use exponential decay for smoother fade effect
+                normalized_distance = distance_from_head / arrow_length
+                # Exponential fade: head = 1.0, tail = 0.0 with smooth curve
+                tail_brightness = (1.0 - normalized_distance) ** 2  # Quadratic fade for smoother transition
                 tail_brightness = max(0.0, min(1.0, tail_brightness))
 
                 # Apply arrow brightness and tail fade
