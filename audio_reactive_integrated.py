@@ -623,6 +623,8 @@ class IntegratedLEDController:
             self._effect_waterfall()
         elif self.current_effect == "beat_pulse":
             self._effect_beat_pulse()
+        elif self.current_effect == "white_segments":
+            self._effect_white_segments()
         else:
             self._effect_spectrum_bars()
 
@@ -1094,6 +1096,55 @@ class IntegratedLEDController:
             hue = (self.effect_state["hue_offset"] + i * 2) % 360
             r, g, b = self._hsv_to_rgb(hue, 1.0, brightness)
             self.strip.setPixelColor(i, Color(g, r, b))
+
+        self.strip.show()
+
+    def _effect_white_segments(self):
+        """White segments effect - split into segments, each segment height controlled by volume"""
+        fft = self.fft_result
+        num_segments = 8  # Number of segments to split the strip into
+
+        # Clear all LEDs first
+        for i in range(self.num_leds):
+            self.strip.setPixelColor(i, Color(0, 0, 0))
+
+        # Calculate LEDs per segment
+        leds_per_segment = self.num_leds // num_segments
+
+        # Process each segment
+        for seg_idx in range(num_segments):
+            # Map segment to FFT bins (distribute FFT_BINS across segments)
+            # Each segment gets 2 FFT bins (16 bins / 8 segments = 2 bins per segment)
+            bins_per_segment = FFT_BINS // num_segments
+            start_bin = seg_idx * bins_per_segment
+            end_bin = min(start_bin + bins_per_segment, FFT_BINS)
+
+            # Calculate average intensity for this segment's frequency range
+            segment_intensity = sum(fft[start_bin:end_bin]) / (end_bin - start_bin) if end_bin > start_bin else 0
+            segment_intensity = min(255, segment_intensity)
+
+            # Calculate how many LEDs to light in this segment (height)
+            # Use volume compensation if enabled
+            volume_factor = self.config.volume_compensation if not self.config.auto_gain else 1.0
+            height_ratio = (segment_intensity / 255.0) * volume_factor
+            height_ratio = min(1.0, height_ratio)
+
+            # Light LEDs from bottom (start of segment) upward
+            num_lit = int(height_ratio * leds_per_segment)
+
+            # Calculate segment boundaries
+            seg_start = seg_idx * leds_per_segment
+            seg_end = min(seg_start + leds_per_segment, self.num_leds)
+
+            # Light LEDs in this segment (white color)
+            for i in range(seg_start, seg_start + num_lit):
+                if i < seg_end:
+                    # White color - full brightness based on intensity
+                    brightness = segment_intensity / 255.0
+                    r = int(255 * brightness)
+                    g = int(255 * brightness)
+                    b = int(255 * brightness)
+                    self.strip.setPixelColor(i, Color(g, r, b))
 
         self.strip.show()
 
