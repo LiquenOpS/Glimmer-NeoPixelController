@@ -1150,13 +1150,13 @@ class IntegratedLEDController:
         if beat:
             self.effect_state["hue_offset"] = (self.effect_state["hue_offset"] + 30) % 360
 
-        # Pulse brightness with volume
-        pulse = math.sin(self.effect_state["time"] * 0.2) * 0.3 + 0.7
+        # Pulse brightness with volume (reduced brightness)
+        pulse = math.sin(self.effect_state["time"] * 0.2) * 0.2 + 0.5
         brightness = volume * pulse
 
-        # Beat flash override
+        # Beat flash override (reduced brightness)
         if beat:
-            brightness = 1.0
+            brightness = 0.7
 
         # Apply color to all LEDs
         for i in range(self.num_leds):
