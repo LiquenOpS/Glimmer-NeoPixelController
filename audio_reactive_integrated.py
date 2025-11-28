@@ -68,6 +68,7 @@ AVAILABLE_EFFECTS = [
     "waterfall",
     "beat_pulse",
     "white_segments",
+    "white_arrow",
 ]
 ROTATABLE_EFFECTS = [
     "spectrum_bars",
@@ -509,6 +510,7 @@ class IntegratedLEDController:
             "hue_offset": 0,
             "pixel_history": deque(maxlen=32),
             "ripple_positions": [],
+            "arrow_positions": [],
         }
 
         # Configuration
@@ -643,6 +645,8 @@ class IntegratedLEDController:
             self._effect_beat_pulse()
         elif self.current_effect == "white_segments":
             self._effect_white_segments()
+        elif self.current_effect == "white_arrow":
+            self._effect_white_arrow()
         else:
             self._effect_spectrum_bars()
 
@@ -1231,6 +1235,71 @@ class IntegratedLEDController:
                     b = int(255 * brightness)
                     self.strip.setPixelColor(i, Color(g, r, b))
 
+        self.strip.show()
+
+    def _effect_white_arrow(self):
+        """White arrow effect - fires arrow from start to end when volume exceeds threshold"""
+        volume = self.sample_agc
+        volume_threshold = 80  # Volume threshold to trigger arrow
+        arrow_speed = 2.0  # Pixels per frame
+        arrow_length = 8  # Length of arrow tail
+
+        # Clear all LEDs first
+        for i in range(self.num_leds):
+            self.strip.setPixelColor(i, Color(0, 0, 0))
+
+        # Create new arrow when volume exceeds threshold
+        # Only create if no arrow is near the start (to prevent too many arrows)
+        has_arrow_near_start = any(arrow["pos"] < arrow_length * 2 for arrow in self.effect_state["arrow_positions"])
+
+        if volume > volume_threshold and not has_arrow_near_start:
+            # Calculate brightness based on volume (stronger volume = brighter)
+            # Map volume from threshold to 255, to brightness 0.3 to 1.0
+            volume_normalized = (volume - volume_threshold) / (255.0 - volume_threshold)
+            volume_normalized = max(0.0, min(1.0, volume_normalized))
+            brightness = 0.3 + (volume_normalized * 0.7)  # Range: 0.3 to 1.0
+
+            # Add new arrow starting from position 0
+            self.effect_state["arrow_positions"].append(
+                {
+                    "pos": 0.0,
+                    "brightness": brightness,
+                }
+            )
+
+        # Update and draw arrows
+        active_arrows = []
+        for arrow in self.effect_state["arrow_positions"]:
+            # Move arrow forward
+            arrow["pos"] += arrow_speed
+
+            # Draw arrow with tail
+            arrow_head = int(arrow["pos"])
+            for i in range(max(0, arrow_head - arrow_length), min(self.num_leds, arrow_head + 1)):
+                # Calculate distance from arrow head
+                distance_from_head = arrow_head - i
+                if distance_from_head < 0:
+                    distance_from_head = 0
+
+                # Calculate tail brightness (brighter at head, dimmer at tail)
+                tail_brightness = 1.0 - (distance_from_head / arrow_length)
+                tail_brightness = max(0.0, min(1.0, tail_brightness))
+
+                # Apply arrow brightness and tail fade
+                final_brightness = arrow["brightness"] * tail_brightness
+
+                # White color with calculated brightness
+                r = int(255 * final_brightness)
+                g = int(255 * final_brightness)
+                b = int(255 * final_brightness)
+
+                self.strip.setPixelColor(i, Color(g, r, b))
+
+            # Keep arrow if still on strip
+            if arrow["pos"] < self.num_leds + arrow_length:
+                active_arrows.append(arrow)
+
+        self.effect_state["arrow_positions"] = active_arrows
         self.strip.show()
 
     @staticmethod
