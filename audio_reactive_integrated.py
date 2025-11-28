@@ -602,6 +602,7 @@ class IntegratedLEDController:
                         print("\n⚠️  No UDP data received for 3 seconds")
                         print("   Waiting for audio source...")
                         no_data_warning_shown = True
+                    self._clear_leds()
 
                 time.sleep(0.001)
 
