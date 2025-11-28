@@ -458,8 +458,8 @@ class IntegratedLEDController:
                 self.strip.silent_mode = True
         else:
             self.strip = PixelStrip(
-                LED_COUNT,
-                LED_PIN,
+                led_count,
+                led_pin,
                 LED_FREQ_HZ,
                 LED_DMA,
                 LED_INVERT,
@@ -628,14 +628,15 @@ class IntegratedLEDController:
 
     def _clear_leds(self):
         """Turn off all LEDs"""
-        for i in range(self.num_leds):
+        print(f"#pixel={self.strip.numPixels()} #led={self.num_leds}")
+        for i in range(self.strip.numPixels()):
             self.strip.setPixelColor(i, Color(0, 0, 0))
         self.strip.show()
 
     def _render_rainbow(self):
         """Render rainbow pattern (based on ws2812_rainbow.py)"""
-        for i in range(self.num_leds):
-            pixel_index = (i * 256 // self.num_leds) + self.rainbow_offset
+        for i in range(self.strip.numPixels()):
+            pixel_index = (i * 256 // self.strip.numPixels()) + self.rainbow_offset
             color = self._wheel(pixel_index & 255)
             self.strip.setPixelColor(i, color)
         self.strip.show()
@@ -1346,6 +1347,9 @@ def create_http_api(controller, port=8080):
 
             # Convert dot notation to hierarchical structure
             data = _flatten_dot_notation(data)
+
+            # add another level for Odoo
+            data = data["led_config"]
 
             # Define valid configuration keys
             VALID_TOP_LEVEL_KEYS = {"state", "enabled"}
@@ -2145,6 +2149,7 @@ def main():
         print("\n\n👋 Shutting down...")
 
     finally:
+        controller._clear_leds()
         controller.stop()
 
     return 0
