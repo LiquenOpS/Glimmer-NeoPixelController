@@ -685,13 +685,25 @@ class IntegratedLEDController:
             return Color(g, r, b)  # GRB order
 
     def _effect_spectrum_bars(self):
-        """Spectrum bars effect (Pink/Purple/Blue palette, centered mirror)"""
+        """Spectrum bars effect (Pink/Purple/Blue palette, colors moving along strip)"""
         fft = self.fft_result
         center = self.num_leds // 2
 
+        # Create moving offset based on time to make colors flow along the strip
+        # Speed: 0.15 means colors move smoothly, adjust as needed
+        time_offset = (self.effect_state["time"] * 0.15) % (self.num_leds * 2)
+
         for i in range(self.num_leds):
-            # Calculate distance from center (0 at center, increases to edges)
-            distance_from_center = abs(i - center)
+            # Apply time offset to create moving color pattern
+            # Use modulo to wrap around for continuous movement
+            offset_i = (i + int(time_offset)) % (self.num_leds * 2)
+
+            # Mirror the pattern for symmetric centered effect
+            if offset_i >= self.num_leds:
+                offset_i = (self.num_leds * 2) - offset_i - 1
+
+            # Calculate distance from center with offset
+            distance_from_center = abs(offset_i - center)
 
             # Map distance to FFT bin (center = low freq, edges = high freq)
             bin_idx = int(distance_from_center * FFT_BINS / center)
