@@ -511,6 +511,7 @@ class IntegratedLEDController:
             "pixel_history": deque(maxlen=32),
             "ripple_positions": [],
             "arrow_positions": [],
+            "last_arrow_time": 0.0,
         }
 
         # Configuration
@@ -1239,20 +1240,24 @@ class IntegratedLEDController:
 
     def _effect_white_arrow(self):
         """White arrow effect - fires arrow from start to end when volume exceeds threshold"""
+        import time
+
         volume = self.sample_agc
         volume_threshold = 80  # Volume threshold to trigger arrow
         arrow_speed = 2.0  # Pixels per frame
         arrow_length = 8  # Length of arrow tail
+        min_arrow_interval = 0.5  # Minimum seconds between arrows (adjust to control frequency)
 
         # Clear all LEDs first
         for i in range(self.num_leds):
             self.strip.setPixelColor(i, Color(0, 0, 0))
 
         # Create new arrow when volume exceeds threshold
-        # Only create if no arrow is near the start (to prevent too many arrows)
-        has_arrow_near_start = any(arrow["pos"] < arrow_length * 2 for arrow in self.effect_state["arrow_positions"])
+        # Limit arrow creation frequency using time interval
+        current_time = time.time()
+        time_since_last_arrow = current_time - self.effect_state.get("last_arrow_time", 0.0)
 
-        if volume > volume_threshold and not has_arrow_near_start:
+        if volume > volume_threshold and time_since_last_arrow >= min_arrow_interval:
             # Calculate brightness based on volume (stronger volume = brighter)
             # Map volume from threshold to 255, to brightness 0.3 to 1.0
             volume_normalized = (volume - volume_threshold) / (255.0 - volume_threshold)
@@ -1266,6 +1271,8 @@ class IntegratedLEDController:
                     "brightness": brightness,
                 }
             )
+            # Update last arrow creation time
+            self.effect_state["last_arrow_time"] = current_time
 
         # Update and draw arrows
         active_arrows = []
