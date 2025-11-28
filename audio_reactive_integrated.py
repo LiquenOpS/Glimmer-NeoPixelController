@@ -628,7 +628,7 @@ class IntegratedLEDController:
 
     def _clear_leds(self):
         """Turn off all LEDs"""
-        print(f"#pixel={self.strip.numPixels()} #led={self.num_leds}")
+        #print(f"#pixel={self.strip.numPixels()} #led={self.num_leds}")
         for i in range(self.strip.numPixels()):
             self.strip.setPixelColor(i, Color(0, 0, 0))
         self.strip.show()
