@@ -67,6 +67,21 @@ AVAILABLE_EFFECTS = [
     "color_wave",
     "waterfall",
     "beat_pulse",
+    "white_segments",
+]
+ROTATABLE_EFFECTS = [
+    "spectrum_bars",
+    "vu_meter",
+    "rainbow_spectrum",
+    "fire",
+    "frequency_wave",
+    "blurz",
+    "pixels",
+    "puddles",
+    "ripple",
+    "color_wave",
+    "waterfall",
+    "beat_pulse",
 ]
 
 
@@ -115,6 +130,7 @@ class LEDConfig:
                     "brightness": self.rainbow_brightness,
                 },
                 "available_effects": AVAILABLE_EFFECTS,
+                "rotatable_effects": ROTATABLE_EFFECTS,
             }
 
     def update(self, **kwargs):
@@ -1251,15 +1267,15 @@ class IntegratedLEDController:
 
     def _next_effect(self):
         """Switch to next effect"""
-        current_idx = AVAILABLE_EFFECTS.index(self.current_effect)
-        next_idx = (current_idx + 1) % len(AVAILABLE_EFFECTS)
-        self.set_effect(AVAILABLE_EFFECTS[next_idx])
+        current_idx = ROTATABLE_EFFECTS.index(self.current_effect)
+        next_idx = (current_idx + 1) % len(ROTATABLE_EFFECTS)
+        self.set_effect(ROTATABLE_EFFECTS[next_idx])
 
     def _prev_effect(self):
         """Switch to previous effect"""
-        current_idx = AVAILABLE_EFFECTS.index(self.current_effect)
-        prev_idx = (current_idx - 1) % len(AVAILABLE_EFFECTS)
-        self.set_effect(AVAILABLE_EFFECTS[prev_idx])
+        current_idx = ROTATABLE_EFFECTS.index(self.current_effect)
+        prev_idx = (current_idx - 1) % len(ROTATABLE_EFFECTS)
+        self.set_effect(ROTATABLE_EFFECTS[prev_idx])
 
     def _show_keyboard_help(self):
         """Show keyboard shortcuts"""
