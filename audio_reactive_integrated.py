@@ -72,9 +72,9 @@ AVAILABLE_EFFECTS = [
 ROTATABLE_EFFECTS = [
     "spectrum_bars",
     "vu_meter",
-    "rainbow_spectrum",
-    "fire",
-    "frequency_wave",
+    # "rainbow_spectrum",
+    # "fire",
+    # "frequency_wave",
     "blurz",
     "pixels",
     "puddles",
@@ -82,6 +82,7 @@ ROTATABLE_EFFECTS = [
     "color_wave",
     "waterfall",
     "beat_pulse",
+    # "white_segments",
 ]
 
 
