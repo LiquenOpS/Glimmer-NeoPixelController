@@ -68,6 +68,8 @@ AVAILABLE_EFFECTS = [
     "waterfall",
     "beat_pulse",
     "white_segments",
+    "white_arrow",
+    "white_marquee",
 ]
 ROTATABLE_EFFECTS = [
     "spectrum_bars",
@@ -509,6 +511,8 @@ class IntegratedLEDController:
             "hue_offset": 0,
             "pixel_history": deque(maxlen=32),
             "ripple_positions": [],
+            "arrow_positions": [],
+            "last_arrow_time": 0.0,
         }
 
         # Configuration
@@ -643,6 +647,10 @@ class IntegratedLEDController:
             self._effect_beat_pulse()
         elif self.current_effect == "white_segments":
             self._effect_white_segments()
+        elif self.current_effect == "white_arrow":
+            self._effect_white_arrow()
+        elif self.current_effect == "white_marquee":
+            self._effect_white_marquee()
         else:
             self._effect_spectrum_bars()
 
@@ -1230,6 +1238,106 @@ class IntegratedLEDController:
                     g = int(255 * brightness)
                     b = int(255 * brightness)
                     self.strip.setPixelColor(i, Color(g, r, b))
+
+        self.strip.show()
+
+    def _effect_white_arrow(self):
+        """White arrow effect - fires arrow from start to end when beat is detected"""
+        import time
+
+        arrow_speed = 2.0  # Pixels per frame
+        arrow_length = 8  # Length of arrow tail
+        min_arrow_interval = 0.4  # Minimum seconds between arrows (adjust to control frequency)
+
+        # Clear all LEDs first
+        for i in range(self.num_leds):
+            self.strip.setPixelColor(i, Color(0, 0, 0))
+
+        # Create new arrow when beat is detected
+        # Limit arrow creation frequency using time interval
+        current_time = time.time()
+        time_since_last_arrow = current_time - self.effect_state.get("last_arrow_time", 0.0)
+
+        if self.sample_peak > 0 and time_since_last_arrow >= min_arrow_interval:
+            # Use fixed brightness for beat-triggered arrows
+            brightness = 1.0
+
+            # Add new arrow starting from position 0
+            self.effect_state["arrow_positions"].append(
+                {
+                    "pos": 0.0,
+                    "brightness": brightness,
+                }
+            )
+            # Update last arrow creation time
+            self.effect_state["last_arrow_time"] = current_time
+
+        # Update and draw arrows
+        active_arrows = []
+        for arrow in self.effect_state["arrow_positions"]:
+            # Move arrow forward
+            arrow["pos"] += arrow_speed
+
+            # Draw arrow with tail
+            arrow_head = int(arrow["pos"])
+            for i in range(max(0, arrow_head - arrow_length), min(self.num_leds, arrow_head + 1)):
+                # Calculate distance from arrow head
+                distance_from_head = arrow_head - i
+                if distance_from_head < 0:
+                    distance_from_head = 0
+
+                # Calculate tail brightness with smooth fade (head brighter, tail darker)
+                # Use exponential decay for smoother fade effect
+                normalized_distance = distance_from_head / arrow_length
+                # Exponential fade: head = 1.0, tail = 0.0 with smooth curve
+                tail_brightness = (1.0 - normalized_distance) ** 2  # Quadratic fade for smoother transition
+                tail_brightness = max(0.0, min(1.0, tail_brightness))
+
+                # Apply arrow brightness and tail fade
+                final_brightness = arrow["brightness"] * tail_brightness
+
+                # White color with calculated brightness
+                r = int(255 * final_brightness)
+                g = int(255 * final_brightness)
+                b = int(255 * final_brightness)
+
+                self.strip.setPixelColor(i, Color(g, r, b))
+
+            # Keep arrow if still on strip
+            if arrow["pos"] < self.num_leds + arrow_length:
+                active_arrows.append(arrow)
+
+        self.effect_state["arrow_positions"] = active_arrows
+        self.strip.show()
+
+    def _effect_white_marquee(self):
+        """Simple slow white marquee effect - moving light from start to end"""
+        # Clear all LEDs first
+        for i in range(self.num_leds):
+            self.strip.setPixelColor(i, Color(0, 0, 0))
+
+        # Calculate marquee position (slow movement)
+        # Use time to create continuous movement, wrap around for looping
+        marquee_speed = 0.3  # Pixels per frame (slow)
+        marquee_length = 10  # Length of lit section
+        marquee_pos = (self.effect_state["time"] * marquee_speed) % (self.num_leds + marquee_length)
+
+        # Draw marquee with fade effect
+        for i in range(self.num_leds):
+            distance_from_marquee = abs(i - marquee_pos)
+
+            if distance_from_marquee <= marquee_length:
+                # Calculate brightness with fade (brighter at center, dimmer at edges)
+                normalized_distance = distance_from_marquee / marquee_length
+                brightness = (1.0 - normalized_distance) ** 2  # Quadratic fade
+                brightness = max(0.0, min(1.0, brightness))
+
+                # White color with calculated brightness
+                r = int(255 * brightness)
+                g = int(255 * brightness)
+                b = int(255 * brightness)
+
+                self.strip.setPixelColor(i, Color(g, r, b))
 
         self.strip.show()
 
