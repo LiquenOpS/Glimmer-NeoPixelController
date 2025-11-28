@@ -917,11 +917,14 @@ class IntegratedLEDController:
             b = int(b * 0.85)
             self.strip.setPixelColor(i, Color(g, r, b))
 
-        # Add new spots based on FFT bins
+        # Add new spots based on FFT bins - equally spaced on LED strip
+        leds_per_bin = self.num_leds / FFT_BINS  # Equal spacing per bin
+
         for bin_idx in range(FFT_BINS):
             if fft[bin_idx] > 100:  # Threshold
-                # Map bin to position
-                position = int((bin_idx / FFT_BINS) * self.num_leds)
+                # Map bin to equally spaced position
+                # Each bin gets its own equal segment of the strip
+                position = int((bin_idx + 0.5) * leds_per_bin)  # Center of each segment
                 if position >= self.num_leds:
                     position = self.num_leds - 1
 
