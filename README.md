@@ -65,7 +65,11 @@ cp config.json.example config.json
 
 **Real LED Mode** (Raspberry Pi):
 ```bash
+# With virtual environment activated
 python3 main.py
+
+# Or with sudo (if GPIO access requires root)
+sudo $(which python3) ./main.py
 ```
 
 **Emulator Mode** (Development/Testing):
@@ -287,9 +291,16 @@ python3 tests/ws2812_control.py
 ### Permission Issues (Raspberry Pi)
 
 If you get permission errors accessing GPIO:
+
+**Option 1: Add user to gpio group** (recommended):
 ```bash
 sudo usermod -a -G gpio $USER
 # Log out and back in
+```
+
+**Option 2: Run with sudo**:
+```bash
+sudo $(which python3) ./main.py
 ```
 
 
