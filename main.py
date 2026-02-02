@@ -6,7 +6,6 @@ Supports multiple input sources and output targets
 Input Sources:
 - UDP: EQ Streamer format (32 bands)
 - UDP: WLED Audio Sync format (V1/V2, 16 bands)
-- Local: Microphone input
 
 Output Targets:
 - Real LED via rpi_ws281x
