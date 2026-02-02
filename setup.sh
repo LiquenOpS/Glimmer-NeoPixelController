@@ -29,7 +29,7 @@ if [ ! -d "$VENV_DIR" ]; then
     python3 -m venv "$VENV_DIR"
     echo "✅ Virtual environment created at $VENV_DIR"
 else
-    echo "ℹ️  Virtual environment already exists at $VENV_DIR"
+    echo "ℹ️ Virtual environment already exists at $VENV_DIR"
 fi
 echo ""
 
@@ -40,7 +40,7 @@ echo "✅ Virtual environment activated"
 echo ""
 
 # Upgrade pip
-echo "⬆️  Upgrading pip..."
+echo "⬆️ Upgrading pip..."
 pip install --upgrade pip > /dev/null
 echo "✅ pip upgraded"
 echo ""
@@ -51,7 +51,7 @@ if [ -f "$REQUIREMENTS" ]; then
     pip install -r "$REQUIREMENTS"
     echo "✅ Requirements installed"
 else
-    echo "⚠️  Warning: requirements.txt not found"
+    echo "⚠️ Warning: requirements.txt not found"
 fi
 echo ""
 
@@ -61,12 +61,12 @@ if [ ! -f "$CONFIG" ]; then
         echo "📝 Creating config.json from example..."
         cp "$CONFIG_EXAMPLE" "$CONFIG"
         echo "✅ Config file created at $CONFIG"
-        echo "   ⚠️  Please review and edit config.json if needed"
+        echo "⚠️ Please review and edit config.json if needed"
     else
-        echo "⚠️  Warning: config.json.example not found"
+        echo "⚠️ Warning: config.json.example not found"
     fi
 else
-    echo "ℹ️  Config file already exists at $CONFIG"
+    echo "ℹ️ Config file already exists at $CONFIG"
 fi
 echo ""
 
