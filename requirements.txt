@@ -12,7 +12,7 @@ Flask-CORS>=3.0.0
 rpi-ws281x>=4.3.0
 
 # For emulator mode (no hardware needed):
-# No additional requirements - led_emulator.py uses only standard library
+# No additional requirements - ws281x_emulator.py uses only standard library
 
 # Audio input (optional - not needed for emulator demo mode)
 # pyaudio>=0.2.11

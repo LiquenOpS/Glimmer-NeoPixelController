@@ -33,7 +33,7 @@ USE_SIMULATOR = "--simulator" in sys.argv
 # Import LED control
 if USE_SIMULATOR:
     print("🔮 Using LED Simulator mode")
-    from led_simulator import Color, PixelStrip
+    from ws281x_emulator import Color, PixelStrip
 else:
     print("💡 Using Real LED mode")
     from rpi_ws281x import Color, PixelStrip
@@ -468,7 +468,7 @@ class IntegratedLEDController:
     ):
         # Initialize LED strip
         if use_simulator:
-            from led_simulator import PixelStripSimulator
+            from ws281x_emulator import PixelStripSimulator
 
             self.strip = PixelStripSimulator(led_count, led_pin)
             self.strip.display_mode = "horizontal"
