@@ -6,8 +6,9 @@ set -e  # Exit on error
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VENV_DIR="${SCRIPT_DIR}/venv"
 REQUIREMENTS="${SCRIPT_DIR}/requirements.txt"
-CONFIG_EXAMPLE="${SCRIPT_DIR}/config.json.example"
-CONFIG="${SCRIPT_DIR}/config.json"
+CONFIG_DIR="${SCRIPT_DIR}/config"
+CONFIG_EXAMPLE="${CONFIG_DIR}/config.json.example"
+CONFIG="${CONFIG_DIR}/config.json"
 
 echo "🚀 Setting up Glimmer LED Controller..."
 echo ""
@@ -61,9 +62,9 @@ if [ ! -f "$CONFIG" ]; then
         echo "📝 Creating config.json from example..."
         cp "$CONFIG_EXAMPLE" "$CONFIG"
         echo "✅ Config file created at $CONFIG"
-        echo "⚠️ Please review and edit config.json if needed"
+        echo "⚠️ Please review and edit config/config.json if needed"
     else
-        echo "⚠️ Warning: config.json.example not found"
+        echo "⚠️ Warning: config/config.json.example not found"
     fi
 else
     echo "ℹ️ Config file already exists at $CONFIG"

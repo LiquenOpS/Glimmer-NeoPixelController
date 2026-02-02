@@ -40,7 +40,7 @@ Run the setup script to create a virtual environment and install dependencies:
 This will:
 - Create a Python virtual environment
 - Install all required dependencies
-- Create `config.json` from `config.json.example`
+- Create `config/config.json` from `config/config.json.example`
 
 ### Manual Installation
 
@@ -56,7 +56,7 @@ pip install -r requirements.txt
 pip install rpi-ws281x
 
 # Copy config template
-cp config.json.example config.json
+cp config/config.json.example config/config.json
 ```
 
 ## Usage
@@ -129,7 +129,7 @@ When running (non-curses mode):
 
 ## Configuration
 
-Configuration is stored in `config.json`. Copy `config.json.example` to `config.json` and customize:
+Configuration is stored in `config/config.json`. Copy `config/config.json.example` to `config/config.json` and customize:
 
 ```json
 {
@@ -249,7 +249,8 @@ sudo systemctl status glimmer
 .
 ├── main.py                 # Main application
 ├── ws281x_emulator.py      # Terminal LED emulator
-├── config.json.example     # Configuration template
+├── config/                 # Configuration directory
+│   └── config.json.example # Configuration template
 ├── requirements.txt        # Python dependencies
 ├── setup.sh               # Setup script
 ├── glimmer.service.example # Systemd service template

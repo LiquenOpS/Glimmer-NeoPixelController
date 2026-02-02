@@ -198,7 +198,7 @@ class LEDConfig:
             if "rainbow_brightness" in kwargs:
                 self.rainbow_brightness = max(0, min(255, int(kwargs["rainbow_brightness"])))
 
-    def save(self, filepath="config.json"):
+    def save(self, filepath="config/config.json"):
         """Save configuration to file (hierarchical structure)"""
         # with self._lock:
         if True:
@@ -208,7 +208,7 @@ class LEDConfig:
             with open(filepath, "w", encoding="utf-8") as f:
                 json.dump(config, f, indent=2, ensure_ascii=False)
 
-    def load(self, filepath="config.json"):
+    def load(self, filepath="config/config.json"):
         """Load configuration from file"""
         try:
             with open(filepath, "r") as f:
