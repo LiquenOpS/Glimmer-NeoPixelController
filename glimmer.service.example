@@ -1,0 +1,22 @@
+[Unit]
+Description=Glimmer Audio Reactive LED Controller
+After=network.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/LQS-IoT_Glimmer
+ExecStart=/usr/bin/python3 /home/pi/LQS-IoT_Glimmer/main.py
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+# For simulator mode, use:
+# ExecStart=/usr/bin/python3 /home/pi/LQS-IoT_Glimmer/main.py --simulator
+
+# For custom options:
+# ExecStart=/usr/bin/python3 /home/pi/LQS-IoT_Glimmer/main.py --api-port 8080 --port 31337
+
+[Install]
+WantedBy=multi-user.target
