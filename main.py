@@ -1496,7 +1496,7 @@ class IntegratedLEDController:
 _global_controller = None
 
 
-def create_http_api(controller, port=8080):
+def create_http_api(controller, port=1129):
     """Create Flask HTTP API for LED control"""
     app = Flask(__name__)
     CORS(app)  # Enable CORS for web interface
@@ -1737,7 +1737,7 @@ def run_with_curses(stdscr, args):
     controller = IntegratedLEDController(
         led_count=args.num_leds,
         led_pin=args.pin,
-        udp_port=args.port,
+        udp_port=args.audio_port,
         udp_protocol=args.format,
         use_simulator=args.simulator,
         curses_screen=stdscr,
@@ -1970,7 +1970,7 @@ def _draw_curses_ui(stdscr, controller, args):
     try:
         stdscr.move(line, 0)
         stdscr.clrtoeol()
-        stdscr.addstr(line, 2, f"Listening: UDP port {args.udp_port} ({args.udp_protocol})")
+        stdscr.addstr(line, 2, f"Audio input: UDP port {args.audio_port} ({args.format})")
         line += 1
     except:
         pass
@@ -2257,7 +2257,7 @@ def main():
 
     # UDP options
     parser.add_argument(
-        "--port", type=int, default=31337, help="UDP port to listen on (default: 31337)"
+        "--audio-port", type=int, default=31337, help="Audio input UDP port (default: 31337)"
     )
     parser.add_argument(
         "--format",
@@ -2267,7 +2267,7 @@ def main():
     )
 
     # HTTP API options
-    parser.add_argument("--api-port", type=int, default=8080, help="HTTP API port (default: 8080)")
+    parser.add_argument("--api-port", type=int, default=1129, help="HTTP API port (default: 1129)")
     parser.add_argument(
         "--no-api",
         action="store_true",
@@ -2292,7 +2292,7 @@ def main():
     if args.simulator:
         print(f"🖥️  Display: {args.display}")
 
-    print(f"📡 UDP: port {args.port}, format {args.format}")
+    print(f"📡 Audio input: UDP port {args.audio_port}, format {args.format}")
     print()
 
     # Use curses interface for simulator mode (if --curses is specified)
@@ -2311,7 +2311,7 @@ def main():
     controller = IntegratedLEDController(
         led_count=args.num_leds,
         led_pin=args.pin,
-        udp_port=args.port,
+        udp_port=args.audio_port,
         udp_protocol=args.format,
         use_simulator=args.simulator,
     )
@@ -2331,7 +2331,7 @@ def main():
         create_http_api(controller, port=args.api_port)
 
     print("🚀 Running!")
-    print(f"   Waiting for UDP audio data on port {args.port}")
+    print(f"   Waiting for audio data on UDP port {args.audio_port}")
     print()
     print("   Supported sources:")
     print("   - LQS-IoT_EqStreamer (32-band)")

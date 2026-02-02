@@ -16,7 +16,7 @@ StandardError=journal
 # ExecStart=/usr/bin/python3 /home/liquenops/LQS-IoT_Glimmer/main.py --simulator
 
 # For custom options:
-# ExecStart=/usr/bin/python3 /home/liquenops/LQS-IoT_Glimmer/main.py --api-port 8080 --port 31337
+# ExecStart=/usr/bin/python3 /home/liquenops/LQS-IoT_Glimmer/main.py --api-port 1129 --audio-port 31337
 
 [Install]
 WantedBy=multi-user.target

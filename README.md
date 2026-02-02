@@ -86,12 +86,12 @@ Simulator Options:
   --display MODE        Display mode: horizontal, vertical, grid (default: horizontal)
   --curses             Enable curses UI (simulator only)
 
-UDP Options:
-  --port PORT          UDP port to listen on (default: 31337)
+Audio Input Options:
+  --audio-port PORT    Audio input UDP port (default: 31337)
   --format FORMAT      UDP protocol: auto, wled, eqstreamer (default: auto)
 
 HTTP API Options:
-  --api-port PORT      HTTP API port (default: 8080)
+  --api-port PORT      HTTP API port (default: 1129)
   --no-api             Disable HTTP API server
 ```
 
@@ -107,8 +107,8 @@ python3 main.py --pin 13 --num-leds 420
 # Run with specific effect
 python3 main.py --effect fire
 
-# Run with custom UDP port
-python3 main.py --port 5000
+# Run with custom audio input port
+python3 main.py --audio-port 5000
 
 # Run without HTTP API
 python3 main.py --no-api
@@ -156,7 +156,7 @@ Configuration is stored in `config.json`. Copy `config.json.example` to `config.
 
 ## HTTP API
 
-The controller exposes a RESTful HTTP API on port 8080 (default).
+The controller exposes a RESTful HTTP API on port 1129 (default).
 
 ### Endpoints
 
@@ -171,17 +171,17 @@ Update configuration. Supports hierarchical structure and dot notation:
 
 ```bash
 # Set state
-curl -X POST http://localhost:8080/api/config \
+curl -X POST http://localhost:1129/api/config \
   -H "Content-Type: application/json" \
   -d '{"state": "rainbow"}'
 
 # Update nested config (hierarchical)
-curl -X POST http://localhost:8080/api/config \
+curl -X POST http://localhost:1129/api/config \
   -H "Content-Type: application/json" \
   -d '{"rainbow": {"speed": 10, "brightness": 200}}'
 
 # Update using dot notation
-curl -X POST http://localhost:8080/api/config \
+curl -X POST http://localhost:1129/api/config \
   -H "Content-Type: application/json" \
   -d '{"rotation.period": 15.0, "audio.volume_compensation": 2.0}'
 ```
@@ -293,8 +293,8 @@ sudo usermod -a -G gpio $USER
 ```
 
 
-### UDP Not Receiving Data
+### Audio Input Not Receiving Data
 
 - Check firewall settings
-- Verify UDP port is correct (default: 31337)
+- Verify audio input port is correct (default: 31337)
 - Test with: `nc -u -l 31337` on another machine
