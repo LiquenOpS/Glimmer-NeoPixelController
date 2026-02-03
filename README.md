@@ -2,6 +2,17 @@
 
 🎵 Integrated audio reactive LED controller for WS2812B/WS281x LED strips with support for multiple input sources and real-time effects.
 
+## Quick Start
+
+```bash
+# Clone the repository (as Glimmer)
+git clone https://github.com/LiquenOpS/Glimmer-NeoPixelController.git Glimmer
+cd Glimmer
+
+# Run setup
+./setup.sh
+```
+
 ## Features
 
 - 🎨 **Multiple LED Effects**: 15+ audio-reactive effects including spectrum bars, VU meter, fire, waterfall, and more
