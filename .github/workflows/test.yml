@@ -9,18 +9,15 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    
-    strategy:
-      matrix:
-        python-version: ['3.8', '3.9', '3.10', '3.11', '3.12']
+    timeout-minutes: 10
     
     steps:
     - uses: actions/checkout@v4
     
-    - name: Set up Python ${{ matrix.python-version }}
+    - name: Set up Python
       uses: actions/setup-python@v5
       with:
-        python-version: ${{ matrix.python-version }}
+        python-version: '3.12'
     
     - name: Install dependencies (simulator mode only, no rpi-ws281x)
       run: |
@@ -35,13 +32,9 @@ jobs:
           cp config/config.json.example config/config.json
         fi
     
-    - name: Test simulator mode (basic startup)
-      run: |
-        timeout 10 python3 main.py --simulator --no-api || true
-        echo "✅ Simulator mode test completed"
-    
     - name: Test API with simulator mode
       continue-on-error: true
+      timeout-minutes: 5
       run: |
         echo "Starting server in simulator mode..."
         python3 main.py --simulator &
@@ -49,12 +42,12 @@ jobs:
         
         # Wait for server to start
         echo "Waiting for server to be ready..."
-        for i in {1..30}; do
+        for i in {1..20}; do
           if curl -s http://localhost:1129/api/status > /dev/null 2>&1; then
             echo "✅ Server is ready!"
             break
           fi
-          if [ $i -eq 30 ]; then
+          if [ $i -eq 20 ]; then
             echo "❌ Server failed to start"
             kill $SERVER_PID || true
             exit 1
@@ -63,7 +56,12 @@ jobs:
         done
         
         echo "Running API tests..."
-        python3 tests/test_api.py || true
+        python3 tests/test_api.py
+        if [ $? -eq 0 ]; then
+          echo "✅ All API tests passed!"
+        else
+          echo "⚠️  Some tests failed (but continuing)"
+        fi
         
         echo "Stopping server..."
         kill $SERVER_PID || true

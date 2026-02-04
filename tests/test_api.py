@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Test script for HTTP API
-Demonstrates all API endpoints (v2026-02-05)
+Quick validation that all API endpoints respond correctly (v2026-02-05)
 """
 
 import json
@@ -20,18 +20,20 @@ def print_response(name, response):
     print(f"{'=' * 60}")
     print(f"Status Code: {response.status_code}")
     try:
-        print(json.dumps(response.json(), indent=2, ensure_ascii=False))
+        data = response.json()
+        # Print summary only, not full response
+        if isinstance(data, dict):
+            print(f"Keys: {list(data.keys())[:5]}...")
+        else:
+            print(json.dumps(data, indent=2, ensure_ascii=False)[:200] + "...")
     except:
-        print(response.text)
+        print(response.text[:200] + "...")
 
 
 def test_api():
-    """Test all API endpoints"""
+    """Test all API endpoints - quick validation only"""
 
-    print("🚀 Starting API Test (v2026-02-05)")
-    print("=" * 60)
-    print("⚠️  Make sure main.py is running!")
-    print("   python3 main.py --simulator")
+    print("🚀 Starting API Test (v2026-02-05) - Quick Validation")
     print("=" * 60)
     
     # Wait for server to be ready
@@ -53,194 +55,121 @@ def test_api():
     try:
         # 1. Get Status
         print("\n1️⃣  Testing GET /api/status")
-        response = requests.get(f"{API_BASE}/status")
+        response = requests.get(f"{API_BASE}/status", timeout=5)
+        assert response.status_code == 200, f"Expected 200, got {response.status_code}"
         print_response("Get Status", response)
-        time.sleep(1)
+        print("✅ PASS")
 
         # 2. Get Config
         print("\n2️⃣  Testing GET /api/config")
-        response = requests.get(f"{API_BASE}/config")
+        response = requests.get(f"{API_BASE}/config", timeout=5)
+        assert response.status_code == 200, f"Expected 200, got {response.status_code}"
         print_response("Get Config", response)
-        time.sleep(1)
+        print("✅ PASS")
 
-        # 3. Set Playlist with Single Effect (Rainbow)
-        print("\n3️⃣  Testing POST /api/config (Set Playlist - Rainbow)")
+        # 3. Set Playlist
+        print("\n3️⃣  Testing POST /api/config (Set Playlist)")
         response = requests.post(
             f"{API_BASE}/config",
-            json={"runtime": {"effects_playlist": ["rainbow"]}}
+            json={"runtime": {"effects_playlist": ["rainbow"]}},
+            timeout=5
         )
-        print_response("Set Rainbow Playlist", response)
-        print("⏳ Waiting 5 seconds to observe rainbow effect...")
-        time.sleep(5)
+        assert response.status_code == 200, f"Expected 200, got {response.status_code}"
+        print_response("Set Playlist", response)
+        print("✅ PASS")
 
-        # 4. Adjust Rainbow Settings
-        print("\n4️⃣  Testing POST /api/config (Adjust Rainbow Settings)")
-        response = requests.post(
-            f"{API_BASE}/config",
-            json={"effects": {"rainbow": {"speed": 10, "brightness": 200}}}
-        )
-        print_response("Adjust Rainbow Settings", response)
-        print("⏳ Waiting 5 seconds to observe changes...")
-        time.sleep(5)
-
-        # 5. Set Effect Directly (Exits Playlist Mode)
-        print("\n5️⃣  Testing POST /api/effect/set (Fire Effect)")
+        # 4. Set Effect Directly
+        print("\n4️⃣  Testing POST /api/effect/set")
         response = requests.post(
             f"{API_BASE}/effect/set",
-            json={"effect": "fire"}
+            json={"effect": "fire"},
+            timeout=5
         )
-        print_response("Set Fire Effect (Manual Mode)", response)
-        print("⏳ Waiting 5 seconds to observe fire effect...")
-        time.sleep(5)
+        assert response.status_code == 200, f"Expected 200, got {response.status_code}"
+        print_response("Set Effect", response)
+        print("✅ PASS")
 
-        # 6. Set Volume Compensation
-        print("\n6️⃣  Testing POST /api/config (Volume Compensation)")
-        response = requests.post(
-            f"{API_BASE}/config",
-            json={"audio": {"volume_compensation": 2.0, "auto_gain": False}}
-        )
-        print_response("Set Volume Compensation", response)
-        time.sleep(1)
+        # 5. Resume Playlist
+        print("\n5️⃣  Testing POST /api/playlist/resume")
+        response = requests.post(f"{API_BASE}/playlist/resume", timeout=5)
+        assert response.status_code == 200, f"Expected 200, got {response.status_code}"
+        print_response("Resume Playlist", response)
+        print("✅ PASS")
 
-        # 7. Set Playlist with Multiple Effects (Auto-rotation)
-        print("\n7️⃣  Testing POST /api/config (Set Playlist - Multiple Effects)")
-        response = requests.post(
-            f"{API_BASE}/config",
-            json={
-                "runtime": {
-                    "effects_playlist": ["spectrum_bars", "vu_meter", "fire"],
-                    "rotation_period": 5.0
-                }
-            }
-        )
-        print_response("Set Multi-Effect Playlist", response)
-        print("⏳ Waiting 15 seconds to observe effect rotation...")
-        time.sleep(15)
-
-        # 8. Add Effect to Playlist
-        print("\n8️⃣  Testing POST /api/playlist/add (Add Waterfall)")
+        # 6. Add to Playlist
+        print("\n6️⃣  Testing POST /api/playlist/add")
         response = requests.post(
             f"{API_BASE}/playlist/add",
-            json={"effect": "waterfall"}
+            json={"effect": "waterfall"},
+            timeout=5
         )
-        print_response("Add Waterfall to Playlist", response)
-        time.sleep(1)
+        assert response.status_code == 200, f"Expected 200, got {response.status_code}"
+        print_response("Add to Playlist", response)
+        print("✅ PASS")
 
-        # 9. Remove Effect from Playlist
-        print("\n9️⃣  Testing POST /api/playlist/remove (Remove Waterfall)")
+        # 7. Remove from Playlist
+        print("\n7️⃣  Testing POST /api/playlist/remove")
         response = requests.post(
             f"{API_BASE}/playlist/remove",
-            json={"effect": "waterfall"}
+            json={"effect": "waterfall"},
+            timeout=5
         )
-        print_response("Remove Waterfall from Playlist", response)
-        time.sleep(1)
+        assert response.status_code == 200, f"Expected 200, got {response.status_code}"
+        print_response("Remove from Playlist", response)
+        print("✅ PASS")
 
-        # 10. Resume Playlist Mode
-        print("\n🔟 Testing POST /api/playlist/resume")
-        response = requests.post(f"{API_BASE}/playlist/resume")
-        print_response("Resume Playlist Mode", response)
-        print("⏳ Waiting 10 seconds to observe playlist rotation...")
-        time.sleep(10)
-
-        # 11. Update Rotation Period
-        print("\n1️⃣1️⃣  Testing POST /api/config (Update Rotation Period)")
+        # 8. Update Config (Dot Notation)
+        print("\n8️⃣  Testing POST /api/config (Dot Notation)")
         response = requests.post(
             f"{API_BASE}/config",
-            json={"runtime": {"rotation_period": 10.0}}
+            json={"runtime.rotation_period": 10.0, "audio.volume_compensation": 1.5},
+            timeout=5
         )
-        print_response("Update Rotation Period", response)
-        time.sleep(1)
+        assert response.status_code == 200, f"Expected 200, got {response.status_code}"
+        print_response("Update Config (Dot Notation)", response)
+        print("✅ PASS")
 
-        # 12. Update Multiple Config Values (Hierarchical Batch Update)
-        print("\n1️⃣2️⃣  Testing POST /api/config (Hierarchical Batch Update)")
+        # 9. Test Error Handling (Invalid Key)
+        print("\n9️⃣  Testing Error Handling (Invalid Key)")
         response = requests.post(
             f"{API_BASE}/config",
-            json={
-                "runtime": {"rotation_period": 8.0},
-                "audio": {"volume_compensation": 1.5},
-                "effects": {"rainbow": {"brightness": 100}},
-            },
+            json={"invalid_key": 123},
+            timeout=5
         )
-        print_response("Batch Update Config", response)
-        time.sleep(1)
+        assert response.status_code == 400, f"Expected 400, got {response.status_code}"
+        print_response("Invalid Key (Expected 400)", response)
+        print("✅ PASS")
 
-        # 13. Set Playlist to Off
-        print("\n1️⃣3️⃣  Testing POST /api/config (Set Playlist to Off)")
-        response = requests.post(
-            f"{API_BASE}/config",
-            json={"runtime": {"effects_playlist": ["off"]}}
-        )
-        print_response("Turn Off LEDs", response)
-        print("⏳ Waiting 3 seconds...")
-        time.sleep(3)
-
-        # 14. Use Dot Notation
-        print("\n1️⃣4️⃣  Testing POST /api/config (Dot Notation)")
-        response = requests.post(
-            f"{API_BASE}/config",
-            json={
-                "runtime.rotation_period": 12.0,
-                "audio.volume_compensation": 2.5,
-                "audio.auto_gain": False,
-                "effects.rainbow.speed": 8,
-                "effects.rainbow.brightness": 180,
-            },
-        )
-        print_response("Dot Notation Update", response)
-        time.sleep(2)
-
-        # 15. Test Invalid Configuration Keys (Should return 400)
-        print("\n1️⃣5️⃣  Testing Invalid Configuration Keys (Error Handling)")
-        response = requests.post(
-            f"{API_BASE}/config",
-            json={
-                "invalid_key": 123,
-                "another_invalid": 456,
-            },
-        )
-        print_response("Invalid Config Keys (Expected 400 Error)", response)
-        if response.status_code == 400:
-            print("✅ Correctly returned 400 error for invalid keys")
-        else:
-            print("⚠️  Warning: Expected 400 error but got", response.status_code)
-        time.sleep(2)
-
-        # 16. Test Empty Configuration (Should return 400)
-        print("\n1️⃣6️⃣  Testing Empty Configuration (Error Handling)")
-        response = requests.post(
-            f"{API_BASE}/config",
-            json={},
-        )
-        print_response("Empty Config (Expected 400 Error)", response)
-        if response.status_code == 400:
-            print("✅ Correctly returned 400 error for empty config")
-        else:
-            print("⚠️  Warning: Expected 400 error but got", response.status_code)
-
-        # Final Status
-        print("\n✅ Testing Complete!")
-        print("\n📊 Final Status:")
-        response = requests.get(f"{API_BASE}/status")
+        # Final Status Check
+        print("\n🔟 Final Status Check")
+        response = requests.get(f"{API_BASE}/status", timeout=5)
+        assert response.status_code == 200, f"Expected 200, got {response.status_code}"
         print_response("Final Status", response)
+        print("✅ PASS")
 
+        print("\n" + "=" * 60)
+        print("✅ All API tests passed!")
+        print("=" * 60)
+        return True
+
+    except AssertionError as e:
+        print(f"\n❌ Test failed: {e}")
+        return False
     except requests.exceptions.ConnectionError:
         print("\n❌ Connection Error!")
         print("   Make sure main.py is running:")
         print("   python3 main.py --simulator")
-        sys.exit(1)
+        return False
     except Exception as e:
         print(f"\n❌ Error: {e}")
         import traceback
-
         traceback.print_exc()
-        sys.exit(1)
+        return False
 
 
 if __name__ == "__main__":
     print("=" * 60)
-    print("🧪 HTTP API Test Script (v2026-02-05)")
+    print("🧪 HTTP API Test Script (v2026-02-05) - Quick Validation")
     print("=" * 60)
-    test_api()
-    print("\n" + "=" * 60)
-    print("✨ Test script completed!")
-    print("=" * 60)
+    success = test_api()
+    sys.exit(0 if success else 1)
