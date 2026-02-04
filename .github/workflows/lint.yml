@@ -2,7 +2,7 @@ name: Lint
 
 on:
   push:
-    branches: [ master, main, 'refactor/**' ]
+    branches: [ master, main, 'refactor/**', 'ci/**' ]
   pull_request:
     branches: [ master, main ]
 
