@@ -93,7 +93,6 @@ class LEDConfig:
     def __init__(self):
         # State: "off", "rainbow", "audio_static", "audio_dynamic"
         self.state = "audio_dynamic"
-        self.enabled = True
 
         # Hardware configuration
         self.num_leds = LED_COUNT  # Number of LEDs (default: 420 for 5m strip)
@@ -129,7 +128,6 @@ class LEDConfig:
         if True:
             return {
                 "state": self.state,
-                "enabled": self.enabled,
                 "hardware": {
                     "num_leds": self.num_leds,
                     "pin": self.pin,
@@ -167,10 +165,6 @@ class LEDConfig:
             if "state" in kwargs:
                 if kwargs["state"] in ["off", "rainbow", "audio_static", "audio_dynamic"]:
                     self.state = kwargs["state"]
-                    self.enabled = kwargs["state"] != "off"
-
-            if "enabled" in kwargs:
-                self.enabled = bool(kwargs["enabled"])
 
             # Hardware settings (hierarchical)
             if "hardware" in kwargs:
@@ -1658,7 +1652,7 @@ def create_http_api(controller, port=1129):
             data = data["led_config"]
 
             # Define valid configuration keys
-            VALID_TOP_LEVEL_KEYS = {"state", "enabled"}
+            VALID_TOP_LEVEL_KEYS = {"state"}
             VALID_AUDIO_KEYS = {"static_effect", "volume_compensation", "auto_gain"}
             VALID_ROTATION_KEYS = {"enabled", "period"}
             VALID_RAINBOW_KEYS = {"speed", "brightness"}
@@ -1704,7 +1698,7 @@ def create_http_api(controller, port=1129):
                     {
                         "success": False,
                         "error": "No valid configuration keys provided. Valid keys include: "
-                        "state, enabled, audio.*, rotation.*, rainbow.*, or legacy flat keys.",
+                        "state, audio.*, rotation.*, rainbow.*, or legacy flat keys.",
                     }
                 ), 400
 

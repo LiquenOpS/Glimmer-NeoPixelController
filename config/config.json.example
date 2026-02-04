@@ -1,6 +1,5 @@
 {
   "state": "audio_dynamic",
-  "enabled": true,
   "hardware": {
     "num_leds": 420,
     "pin": 18
