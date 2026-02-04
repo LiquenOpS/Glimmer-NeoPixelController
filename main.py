@@ -39,11 +39,7 @@ else:
 
 
 FFT_BINS = 16
-LED_COUNT_SIM = 60
-
-# LED strip configuration
-LED_COUNT = 420  # Number of LEDs 420 for 5m
-LED_PIN = 18  # GPIO pin (must support PWM, e.g., GPIO18)
+# LED_COUNT_SIM, LED_COUNT, LED_PIN removed - all defaults now come from config file
 LED_FREQ_HZ = 800000  # LED signal frequency (usually 800kHz)
 LED_DMA = 10  # DMA channel to use for generating signal
 LED_BRIGHTNESS = 77  # Brightness (0-255)
@@ -136,14 +132,14 @@ class LEDConfig:
         self.current_effect = self.playlist_effects[0]
         self.rotation_period = 10.0  # Seconds between effect changes (used if playlist has multiple effects)
 
-        # Hardware configuration
-        self.num_leds = LED_COUNT  # Number of LEDs (default: 420 for 5m strip)
-        self.pin = LED_PIN  # GPIO pin (default: 18)
+        # Hardware configuration (no defaults - must be in config file)
+        self.num_leds = None
+        self.pin = None
 
-        # Network configuration
-        self.audio_port = 31337  # UDP port for audio input
-        self.audio_format = "auto"  # UDP protocol: auto, wled, eqstreamer
-        self.api_port = 1129  # HTTP API port
+        # Network configuration (no defaults - must be in config file)
+        self.audio_port = None
+        self.audio_format = None
+        self.api_port = None
 
         # Simulator configuration
         self.display_mode = "horizontal"  # Display mode: horizontal, vertical, grid
@@ -375,13 +371,29 @@ class LEDConfig:
                 lines.append(line)
             content = '\n'.join(lines)
             
+            # Remove trailing commas (before ] or })
+            import re
+            # Remove trailing comma before closing bracket/brace (but not inside strings)
+            # This regex matches: comma, optional whitespace, closing bracket/brace
+            # We need to be careful not to match commas inside strings
+            # Simple approach: replace ",]" with "]" and ",}" with "}"
+            # But we need to handle multiline cases too
+            content = re.sub(r',(\s*[}\]])', r'\1', content)
+            
             config = json.loads(content)
             self.update(**config)
             return True
         except FileNotFoundError:
+            print(f"❌ Config file not found: {filepath}")
+            print("   Please create config/config.json (copy from config/config.json.example)")
+            return False
+        except json.JSONDecodeError as e:
+            print(f"❌ Error parsing config file: {e}")
+            print(f"   File: {filepath}")
             return False
         except Exception as e:
-            print(f"⚠️  Error loading config: {e}")
+            print(f"❌ Error loading config: {e}")
+            print(f"   File: {filepath}")
             return False
 
 
@@ -621,13 +633,21 @@ class IntegratedLEDController:
 
     def __init__(
         self,
-        led_count=LED_COUNT_SIM,
-        led_pin=LED_PIN,
-        udp_port=31337,
+        led_count=None,
+        led_pin=None,
+        udp_port=None,
         udp_protocol="auto",
         use_simulator=False,
         curses_screen=None,
     ):
+        # Validate required parameters
+        if led_count is None:
+            raise ValueError("led_count is required (must be provided or set in config)")
+        if led_pin is None:
+            raise ValueError("led_pin is required (must be provided or set in config)")
+        if udp_port is None:
+            raise ValueError("udp_port is required (must be provided or set in config)")
+        
         # Initialize LED strip
         if use_simulator:
             from ws281x_emulator import PixelStripSimulator
@@ -2453,7 +2473,22 @@ def main():
     """Main entry point"""
     # Load config file first to get default values
     config = LEDConfig()
-    config.load()  # Load from config/config.json if exists
+    if not config.load():  # Load from config/config.json (required)
+        print("\n❌ Failed to load configuration file. Exiting.")
+        sys.exit(1)
+    
+    # Validate required config values
+    required_fields = {
+        "num_leds": config.num_leds,
+        "pin": config.pin,
+        "audio_port": config.audio_port,
+        "api_port": config.api_port,
+    }
+    missing = [name for name, value in required_fields.items() if value is None]
+    if missing:
+        print(f"\n❌ Missing required configuration fields: {', '.join(missing)}")
+        print("   Please check your config/config.json file")
+        sys.exit(1)
 
     parser = argparse.ArgumentParser(description="Integrated Audio Reactive LED Controller")
 
@@ -2550,9 +2585,9 @@ def main():
     api_port = args.api_port if args.api_port is not None else config.api_port
     display_mode = args.display if args.display is not None else config.display_mode
 
-    # For simulator mode, use different default for num_leds
+    # For simulator mode, use config value if not specified
     if args.simulator and args.num_leds is None:
-        num_leds = LED_COUNT_SIM
+        num_leds = config.num_leds
 
     print("=" * 60)
     print("🎵 Integrated Audio Reactive LED Controller")
