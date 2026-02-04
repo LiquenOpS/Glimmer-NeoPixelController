@@ -717,7 +717,7 @@ class IntegratedLEDController:
                 self.current_effect = playlist[0]
                 self.config.current_effect = self.current_effect
             else:
-                raise ValueError("playlist.effects must contain at least one effect from supported_effects")
+                raise ValueError("runtime.effects_playlist must contain at least one effect from supported_effects")
         else:
             raise ValueError("playlist_effects and supported_effects must be set in config file")
 
@@ -1812,9 +1812,9 @@ def create_http_api(controller, port=1129):
         Convert dot notation keys to hierarchical structure.
 
         Example:
-            {"runtime.playlist.rotation_period": 5, "effects.audio.volume_compensation": 1.5}
+            {"runtime.rotation_period": 5, "audio.volume_compensation": 1.5}
         becomes:
-            {"runtime": {"playlist": {"rotation_period": 5}}, "effects": {"audio": {"volume_compensation": 1.5}}}
+            {"runtime": {"rotation_period": 5}, "audio": {"volume_compensation": 1.5}}
         """
         result = {}
 
@@ -1849,10 +1849,8 @@ def create_http_api(controller, port=1129):
         Hierarchical structure:
         {
             "runtime": {
-                "playlist": {
-                    "effects": ["spectrum_bars", "vu_meter"],
-                    "rotation_period": 10.0
-                }
+                "effects_playlist": ["spectrum_bars", "vu_meter"],
+                "rotation_period": 10.0
             },
             "audio": {
                 "volume_compensation": 1.0,
@@ -1873,9 +1871,10 @@ def create_http_api(controller, port=1129):
 
         Note: current_effect is runtime-only (not saved). Use set_effect() API to switch effects.
         
-        Also supports:
-        - Flat structure (backward compatibility): "static_effect", "rotation_period", etc.
-        - Dot notation: "runtime.playlist.rotation_period", "audio.volume_compensation", etc.
+        Also supports dot notation:
+        - "runtime.rotation_period", "runtime.effects_playlist"
+        - "audio.volume_compensation", "audio.auto_gain"
+        - "effects.rainbow.speed", "effects.rainbow.brightness"
         """
         try:
             data = request.get_json()
@@ -2624,8 +2623,8 @@ def main():
     # Validate required config values
     required_fields = {
         "hardware.supported_effects": config.supported_effects,
-        "runtime.playlist.effects": config.playlist_effects,
-        "runtime.playlist.rotation_period": config.rotation_period,
+        "runtime.effects_playlist": config.playlist_effects,
+        "runtime.rotation_period": config.rotation_period,
         "hardware.num_leds": config.num_leds,
         "hardware.pin": config.pin,
         "network.audio_port": config.audio_port,
@@ -2646,7 +2645,7 @@ def main():
     
     # Additional validation: playlist must have at least one effect
     if not config.playlist_effects or len(config.playlist_effects) == 0:
-        print("\n❌ runtime.playlist.effects must be a non-empty list")
+        print("\n❌ runtime.effects_playlist must be a non-empty list")
         print("   Please check your config/config.json file")
         sys.exit(1)
     
