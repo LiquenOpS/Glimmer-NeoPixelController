@@ -71,7 +71,7 @@ def test_api():
         print("\n3️⃣  Testing POST /api/config (Set Playlist)")
         response = requests.post(
             f"{API_BASE}/config",
-            json={"runtime": {"effects_playlist": ["rainbow"]}},
+            json={"led_config": {"runtime": {"effects_playlist": ["rainbow"]}}},
             timeout=5
         )
         assert response.status_code == 200, f"Expected 200, got {response.status_code}"
@@ -122,7 +122,7 @@ def test_api():
         print("\n8️⃣  Testing POST /api/config (Dot Notation)")
         response = requests.post(
             f"{API_BASE}/config",
-            json={"runtime.rotation_period": 10.0, "audio.volume_compensation": 1.5},
+            json={"led_config": {"runtime.rotation_period": 10.0, "audio.volume_compensation": 1.5}},
             timeout=5
         )
         assert response.status_code == 200, f"Expected 200, got {response.status_code}"
@@ -133,7 +133,7 @@ def test_api():
         print("\n9️⃣  Testing Error Handling (Invalid Key)")
         response = requests.post(
             f"{API_BASE}/config",
-            json={"invalid_key": 123},
+            json={"led_config": {"invalid_key": 123}},
             timeout=5
         )
         assert response.status_code == 400, f"Expected 400, got {response.status_code}"
