@@ -1,9 +1,11 @@
 {
   "runtime": {
-    "playlist": {
-      "effects": ["spectrum_bars", "vu_meter", "fire"],
-      "rotation_period": 10.0
-    }
+    "effects_playlist": [
+      "spectrum_bars",
+      "vu_meter",
+      "fire"
+    ],
+    "rotation_period": 10.0
   },
   "audio": {
     "volume_compensation": 1.0,

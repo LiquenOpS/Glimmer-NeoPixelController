@@ -122,7 +122,7 @@ class LEDConfig:
     def __init__(self):
         # Hardware-supported effects (capabilities)
         # This is the set of effects this hardware/profile supports.
-        # Runtime selection is controlled by runtime.playlist (below).
+        # Runtime selection is controlled by runtime.effects_playlist (below).
         # No default - must be in config file
         self.supported_effects = None
 
@@ -165,10 +165,8 @@ class LEDConfig:
         if True:
             return {
                 "runtime": {
-                    "playlist": {
-                        "effects": self.playlist_effects,
-                        "rotation_period": self.rotation_period,
-                    }
+                    "effects_playlist": self.playlist_effects,
+                    "rotation_period": self.rotation_period,
                 },
                 "audio": {
                     "volume_compensation": self.audio_volume_compensation,
@@ -212,36 +210,21 @@ class LEDConfig:
                     if supported:
                         self.supported_effects = supported
 
-            # Runtime playlist (new schema)
+            # Runtime playlist: runtime.effects_playlist and runtime.rotation_period
             if "runtime" in kwargs and isinstance(kwargs["runtime"], dict):
                 runtime = kwargs["runtime"]
-                playlist = runtime.get("playlist")
-                if isinstance(playlist, dict):
-                    if "effects" in playlist and isinstance(playlist["effects"], list):
-                        effects = [e for e in playlist["effects"] if e in AVAILABLE_EFFECTS]
-                        if effects:
-                            # Also enforce supported_effects
-                            effects = [e for e in effects if e in self.supported_effects]
-                            if effects:
-                                self.playlist_effects = effects
-                    if "rotation_period" in playlist:
-                        self.rotation_period = max(1.0, float(playlist["rotation_period"]))
-                    if "current_effect" in playlist and playlist["current_effect"] in AVAILABLE_EFFECTS:
-                        if playlist["current_effect"] in self.supported_effects:
-                            self.current_effect = playlist["current_effect"]
-
-            # Legacy flat effect settings (previous refactor)
-            if "current_effect" in kwargs and kwargs["current_effect"] in AVAILABLE_EFFECTS:
-                if kwargs["current_effect"] in self.supported_effects:
-                    self.current_effect = kwargs["current_effect"]
-            if "effect_playlist" in kwargs:
-                playlist = kwargs["effect_playlist"]
-                if isinstance(playlist, list) and len(playlist) > 0:
-                    effects = [e for e in playlist if e in AVAILABLE_EFFECTS and e in self.supported_effects]
+                
+                if "effects_playlist" in runtime and isinstance(runtime["effects_playlist"], list):
+                    effects = [e for e in runtime["effects_playlist"] if e in AVAILABLE_EFFECTS]
                     if effects:
-                        self.playlist_effects = effects
-                        if self.playlist_effects and self.current_effect not in self.playlist_effects:
-                            self.current_effect = self.playlist_effects[0]
+                        # Also enforce supported_effects
+                        if self.supported_effects:
+                            effects = [e for e in effects if e in self.supported_effects]
+                        if effects:
+                            self.playlist_effects = effects
+                
+                if "rotation_period" in runtime:
+                    self.rotation_period = max(1.0, float(runtime["rotation_period"]))
 
             # Hardware settings (hierarchical)
             if "hardware" in kwargs:
@@ -1906,17 +1889,9 @@ def create_http_api(controller, port=1129):
             # Define valid configuration keys
             VALID_TOP_LEVEL_KEYS = {"hardware", "runtime", "effects", "audio", "network", "simulator"}
             VALID_HW_KEYS = {"supported_effects"}
-            VALID_RUNTIME_PLAYLIST_KEYS = {"effects", "rotation_period"}
+            VALID_RUNTIME_KEYS = {"effects_playlist", "rotation_period"}
             VALID_AUDIO_KEYS = {"volume_compensation", "auto_gain"}
             VALID_EFFECTS_RAINBOW_KEYS = {"speed", "brightness"}
-            VALID_FLAT_KEYS = {
-                "static_effect",  # Legacy: maps to current_effect
-                "volume_compensation",
-                "auto_gain",
-                "rotation_period",
-                "rainbow_speed",
-                "rainbow_brightness",
-            }
 
             # Check if request contains any valid configuration keys
             has_valid_key = False
@@ -1929,15 +1904,12 @@ def create_http_api(controller, port=1129):
 
             # Check hierarchical keys
             if not has_valid_key:
-                # New schema: validate nested keys shallowly
                 if "hardware" in data and isinstance(data["hardware"], dict):
                     if any(k in data["hardware"] for k in VALID_HW_KEYS):
                         has_valid_key = True
                 if "runtime" in data and isinstance(data["runtime"], dict):
-                    playlist = data["runtime"].get("playlist")
-                    if isinstance(playlist, dict) and any(
-                        k in playlist for k in VALID_RUNTIME_PLAYLIST_KEYS
-                    ):
+                    runtime = data["runtime"]
+                    if any(k in runtime for k in VALID_RUNTIME_KEYS):
                         has_valid_key = True
                 if "audio" in data and isinstance(data["audio"], dict):
                     if any(k in data["audio"] for k in VALID_AUDIO_KEYS):
@@ -1949,52 +1921,36 @@ def create_http_api(controller, port=1129):
                     ):
                         has_valid_key = True
 
-            # Check flat keys
-            if not has_valid_key:
-                if any(key in data for key in VALID_FLAT_KEYS):
-                    has_valid_key = True
-
             # If no valid keys found, return error
             if not has_valid_key:
                 return jsonify(
                     {
                         "success": False,
                         "error": "No valid configuration keys provided. Valid keys include: "
-                        "hardware, runtime, effects, network, simulator, or legacy flat keys.",
+                        "hardware, runtime, effects, network, simulator.",
                     }
                 ), 400
 
-            # Validate new schema: runtime.playlist.*
+            # Validate runtime.effects_playlist
             if "runtime" in data and isinstance(data["runtime"], dict):
-                playlist = data["runtime"].get("playlist")
-                if isinstance(playlist, dict):
-                    if "effects" in playlist:
-                        effects = playlist["effects"]
-                        if not isinstance(effects, list) or len(effects) == 0:
-                            return jsonify(
-                                {
-                                    "success": False,
-                                    "error": "runtime.playlist.effects must be a non-empty list",
-                                }
-                            ), 400
-                        invalid = [e for e in effects if e not in AVAILABLE_EFFECTS]
-                        if invalid:
-                            return jsonify(
-                                {
-                                    "success": False,
-                                    "error": f"Invalid effects in playlist: {invalid}. Must be from: {AVAILABLE_EFFECTS}",
-                                }
-                            ), 400
-
-            # Legacy flat structure support - static_effect maps to current_effect
-            if "static_effect" in data:
-                if data["static_effect"] not in AVAILABLE_EFFECTS:
-                    return jsonify(
-                        {
-                            "success": False,
-                            "error": f"Invalid effect. Must be one of: {AVAILABLE_EFFECTS}",
-                        }
-                    ), 400
+                runtime = data["runtime"]
+                if "effects_playlist" in runtime:
+                    effects = runtime["effects_playlist"]
+                    if not isinstance(effects, list) or len(effects) == 0:
+                        return jsonify(
+                            {
+                                "success": False,
+                                "error": "runtime.effects_playlist must be a non-empty list",
+                            }
+                        ), 400
+                    invalid = [e for e in effects if e not in AVAILABLE_EFFECTS]
+                    if invalid:
+                        return jsonify(
+                            {
+                                "success": False,
+                                "error": f"Invalid effects in playlist: {invalid}. Must be from: {AVAILABLE_EFFECTS}",
+                            }
+                        ), 400
 
             # Update configuration
             controller.config.update(**data)
@@ -2003,16 +1959,15 @@ def create_http_api(controller, port=1129):
             controller.config.save()
 
             # Reset rotation timer if rotation settings changed
-            if "rotation_period" in data or ("runtime" in data and "playlist" in (data.get("runtime") or {})):
-                controller.last_rotation_time = time.time()
-
-            # If playlist changed, ensure current_effect is in playlist (start from first if not)
             if "runtime" in data and isinstance(data["runtime"], dict):
-                playlist = data["runtime"].get("playlist")
-                if isinstance(playlist, dict) and "effects" in playlist:
-                    pl = controller.config.playlist_effects
-                    if pl and controller.current_effect not in pl:
-                        controller.set_effect(pl[0])
+                runtime = data["runtime"]
+                if "rotation_period" in runtime or "effects_playlist" in runtime:
+                    controller.last_rotation_time = time.time()
+                    # If playlist changed, ensure current_effect is in playlist (start from first if not)
+                    if "effects_playlist" in runtime:
+                        pl = controller.config.playlist_effects
+                        if pl and controller.current_effect not in pl:
+                            controller.set_effect(pl[0])
             
             # Legacy: support static_effect and current_effect (for immediate switching via API)
             if "current_effect" in data:
