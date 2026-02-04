@@ -123,14 +123,16 @@ class LEDConfig:
         # Hardware-supported effects (capabilities)
         # This is the set of effects this hardware/profile supports.
         # Runtime selection is controlled by runtime.playlist (below).
-        self.supported_effects = list(AVAILABLE_EFFECTS)
+        # No default - must be in config file
+        self.supported_effects = None
 
         # Runtime playlist (what we actually run right now)
         # - If playlist has 1 item -> fixed effect
         # - If playlist has >1 -> auto-rotate with rotation_period
-        self.playlist_effects = ["spectrum_bars", "vu_meter", "fire"]
-        self.current_effect = self.playlist_effects[0]
-        self.rotation_period = 10.0  # Seconds between effect changes (used if playlist has multiple effects)
+        # No defaults - must be in config file
+        self.playlist_effects = None
+        self.current_effect = None  # Runtime state, not persisted
+        self.rotation_period = None  # Seconds between effect changes (used if playlist has multiple effects)
 
         # Hardware configuration (no defaults - must be in config file)
         self.num_leds = None
@@ -141,17 +143,18 @@ class LEDConfig:
         self.audio_format = None
         self.api_port = None
 
-        # Simulator configuration
-        self.display_mode = "horizontal"  # Display mode: horizontal, vertical, grid
+        # Simulator configuration (no defaults - must be in config file)
+        self.display_mode = None  # Display mode: horizontal, vertical, grid
 
         # Audio processing settings (applies to all audio-reactive effects)
-        self.audio_volume_compensation = 1.0  # Multiplier for volume (0.1 - 5.0)
-        self.audio_auto_gain = True  # Automatic gain control
+        # No defaults - must be in config file
+        self.audio_volume_compensation = None  # Multiplier for volume (0.1 - 5.0)
+        self.audio_auto_gain = None  # Automatic gain control
 
         # Effect-specific settings (effects.*)
-        # Rainbow effect settings
-        self.effects_rainbow_speed = 20  # Speed of rainbow animation (ms per frame)
-        self.effects_rainbow_brightness = 77  # Brightness for rainbow mode (0-255)
+        # Rainbow effect settings (no defaults - must be in config file)
+        self.effects_rainbow_speed = None  # Speed of rainbow animation (ms per frame)
+        self.effects_rainbow_brightness = None  # Brightness for rainbow mode (0-255)
 
         # TODO: there is deadlock so skip locking
         # self._lock = threading.Lock()
@@ -237,7 +240,7 @@ class LEDConfig:
                     effects = [e for e in playlist if e in AVAILABLE_EFFECTS and e in self.supported_effects]
                     if effects:
                         self.playlist_effects = effects
-                        if self.current_effect not in self.playlist_effects:
+                        if self.playlist_effects and self.current_effect not in self.playlist_effects:
                             self.current_effect = self.playlist_effects[0]
 
             # Hardware settings (hierarchical)
@@ -722,19 +725,18 @@ class IntegratedLEDController:
         """Start the controller"""
         print("🎵 Starting Integrated Audio Reactive LED Controller")
 
-        # Set current_effect from config (playlist first effect or current_effect)
-        playlist = [e for e in self.config.playlist_effects if e in self.config.supported_effects]
-        if playlist:
-            # Use first effect in playlist as starting point
-            self.current_effect = playlist[0]
-            self.config.current_effect = self.current_effect
-        elif self.config.current_effect:
-            # Fallback to config's current_effect if playlist is empty
-            self.current_effect = self.config.current_effect
+        # Set current_effect from config (playlist first effect)
+        # playlist_effects should be validated in main() before reaching here
+        if self.config.playlist_effects and self.config.supported_effects:
+            playlist = [e for e in self.config.playlist_effects if e in self.config.supported_effects]
+            if playlist:
+                # Use first effect in playlist as starting point
+                self.current_effect = playlist[0]
+                self.config.current_effect = self.current_effect
+            else:
+                raise ValueError("playlist.effects must contain at least one effect from supported_effects")
         else:
-            # Last resort: use "off"
-            self.current_effect = "off"
-            self.config.current_effect = "off"
+            raise ValueError("playlist_effects and supported_effects must be set in config file")
 
         self.udp_receiver.start()
         self.running = True
@@ -754,6 +756,11 @@ class IntegratedLEDController:
     def _process_loop(self):
         """Main processing loop"""
         no_data_warning_shown = False
+        # Check if playlist has any audio-required effects (only check once at startup)
+        playlist_has_audio_effects = False
+        if self.playlist_mode:
+            playlist = [e for e in self.config.playlist_effects if e in self.config.supported_effects]
+            playlist_has_audio_effects = any(e in AUDIO_REQUIRED_EFFECTS for e in playlist)
 
         while self.running:
             try:
@@ -826,8 +833,9 @@ class IntegratedLEDController:
                     # Update LEDs with current effect
                     self._update_leds()
                 else:
-                    # No data received
-                    if not self.udp_receiver.is_active() and not no_data_warning_shown:
+                    # No data received - only show warning in playlist mode with audio-required effects
+                    if (self.playlist_mode and playlist_has_audio_effects and 
+                        not self.udp_receiver.is_active() and not no_data_warning_shown):
                         print("\n⚠️  No UDP data received for 3 seconds")
                         print("   Waiting for audio source...")
                         no_data_warning_shown = True
@@ -1694,13 +1702,19 @@ class IntegratedLEDController:
                         # Show help
                         self._show_keyboard_help()
                     elif key.isdigit():
-                        # Direct effect selection (1-9,0) (exits playlist mode)
+                        # Direct effect selection (0-9) (exits playlist mode)
+                        # 0 = first effect (off), 1-9 = effects 2-10
                         idx = int(key)
-                        if idx == 0:
-                            idx = 10
                         supported = self.config.supported_effects
-                        if 1 <= idx <= len(supported):
-                            self.set_effect(supported[idx - 1])
+                        if idx == 0:
+                            # 0 key maps to first effect (off)
+                            if len(supported) > 0:
+                                self.set_effect(supported[0])
+                        elif 1 <= idx <= 9:
+                            # 1-9 keys map to effects 2-10 (only if they exist)
+                            effect_idx = idx  # 1 -> index 1 (2nd effect), 9 -> index 9 (10th effect)
+                            if effect_idx < len(supported):
+                                self.set_effect(supported[effect_idx])
 
         finally:
             # Restore terminal settings
@@ -1747,7 +1761,8 @@ class IntegratedLEDController:
         print("  r       - Resume playlist mode (auto-rotation)")
         print("  h       - Show this help")
         print("  q       - Quit")
-        print("  1-9,0   - Jump to effect by number (manual mode)")
+        print("  0       - Jump to first effect (off)")
+        print("  1-9     - Jump to effects 2-10 (manual mode)")
         print()
         print("📋 SUPPORTED EFFECTS:")
         supported = self.config.supported_effects
@@ -2210,11 +2225,16 @@ def run_with_curses(stdscr, args):
                         stdscr.getch()  # Wait for keypress
                     elif ord("0") <= key <= ord("9"):
                         idx = int(chr(key))
-                        if idx == 0:
-                            idx = 10
                         supported = controller.config.supported_effects
-                        if 1 <= idx <= len(supported):
-                            controller.set_effect(supported[idx - 1])
+                        if idx == 0:
+                            # 0 key maps to first effect (off)
+                            if len(supported) > 0:
+                                controller.set_effect(supported[0])
+                        elif 1 <= idx <= 9:
+                            # 1-9 keys map to effects 2-10 (only if they exist)
+                            effect_idx = idx  # 1 -> index 1 (2nd effect), 9 -> index 9 (10th effect)
+                            if effect_idx < len(supported):
+                                controller.set_effect(supported[effect_idx])
             except:
                 pass
 
@@ -2393,7 +2413,7 @@ def _draw_curses_ui(stdscr, controller, args):
         line += 1
         stdscr.move(line, 0)
         stdscr.clrtoeol()
-        stdscr.addstr(line, 2, "[N] Next  [P] Prev  [H] Help  [Q] Quit  [1-9,0] Jump to effect")
+        stdscr.addstr(line, 2, "[N] Next  [P] Prev  [R] Resume  [H] Help  [Q] Quit  [0-9] Jump to effect")
         line += 2
     except:
         pass
@@ -2605,7 +2625,9 @@ def _draw_help_screen(stdscr, controller):
         line += 1
         stdscr.addstr(line, 4, "Q       - Quit")
         line += 1
-        stdscr.addstr(line, 4, "1-9,0   - Jump to effect by number")
+        stdscr.addstr(line, 4, "0       - Jump to first effect (off)")
+        line += 1
+        stdscr.addstr(line, 4, "1-9     - Jump to effects 2-10")
         line += 2
     except:
         pass
@@ -2646,16 +2668,40 @@ def main():
     
     # Validate required config values
     required_fields = {
-        "num_leds": config.num_leds,
-        "pin": config.pin,
-        "audio_port": config.audio_port,
-        "api_port": config.api_port,
+        "hardware.supported_effects": config.supported_effects,
+        "runtime.playlist.effects": config.playlist_effects,
+        "runtime.playlist.rotation_period": config.rotation_period,
+        "hardware.num_leds": config.num_leds,
+        "hardware.pin": config.pin,
+        "network.audio_port": config.audio_port,
+        "network.audio_format": config.audio_format,
+        "network.api_port": config.api_port,
+        "simulator.display_mode": config.display_mode,
+        "audio.volume_compensation": config.audio_volume_compensation,
+        "audio.auto_gain": config.audio_auto_gain,
+        "effects.rainbow.speed": config.effects_rainbow_speed,
+        "effects.rainbow.brightness": config.effects_rainbow_brightness,
     }
     missing = [name for name, value in required_fields.items() if value is None]
     if missing:
         print(f"\n❌ Missing required configuration fields: {', '.join(missing)}")
         print("   Please check your config/config.json file")
+        print("   All configuration values must be provided in the config file")
         sys.exit(1)
+    
+    # Additional validation: playlist must have at least one effect
+    if not config.playlist_effects or len(config.playlist_effects) == 0:
+        print("\n❌ runtime.playlist.effects must be a non-empty list")
+        print("   Please check your config/config.json file")
+        sys.exit(1)
+    
+    # Additional validation: playlist effects must be in supported_effects
+    if config.supported_effects:
+        invalid_effects = [e for e in config.playlist_effects if e not in config.supported_effects]
+        if invalid_effects:
+            print(f"\n❌ Invalid effects in playlist: {invalid_effects}")
+            print(f"   All playlist effects must be in supported_effects: {config.supported_effects}")
+            sys.exit(1)
 
     parser = argparse.ArgumentParser(description="Integrated Audio Reactive LED Controller")
 
@@ -2854,7 +2900,7 @@ def main():
         print(f"⌨️  KEYBOARD CONTROLS ({mode_label}):")
         print("   n = Next effect (manual)    p = Previous effect (manual)    r = Resume playlist")
         print("   h = Show help      q = Quit")
-        print("   1-9,0 = Jump to effect (manual)")
+        print("   0 = First effect (off)    1-9 = Effects 2-10 (manual)")
         print()
         controller._print_help_hint()
     else:

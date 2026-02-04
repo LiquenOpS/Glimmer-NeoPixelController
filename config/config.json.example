@@ -27,7 +27,7 @@
     "num_leds": 420,
     "pin": 18,
     "supported_effects": [
-      "off",  // no-audio: Turn off all LEDs
+      "off",  // no-audio: Turn off all LEDs (DO NOT MOVE: must be first for number key '0' to work)
       "rainbow",  // no-audio: Rainbow cycle effect
       "spectrum_bars",  // audio: Frequency spectrum bars
       "vu_meter",  // audio: VU meter style
