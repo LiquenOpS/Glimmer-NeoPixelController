@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Test script for HTTP API
-Demonstrates all API endpoints
+Demonstrates all API endpoints (v2026-02-05)
 """
 
 import json
@@ -28,13 +28,27 @@ def print_response(name, response):
 def test_api():
     """Test all API endpoints"""
 
-    print("🚀 Starting API Test")
+    print("🚀 Starting API Test (v2026-02-05)")
     print("=" * 60)
-    print("⚠️  Make sure audio_reactive_integrated.py is running!")
-    print("   python3 audio_reactive_integrated.py --simulator")
+    print("⚠️  Make sure main.py is running!")
+    print("   python3 main.py --simulator")
     print("=" * 60)
-
-    time.sleep(2)
+    
+    # Wait for server to be ready
+    max_retries = 10
+    for i in range(max_retries):
+        try:
+            response = requests.get(f"{API_BASE}/status", timeout=2)
+            if response.status_code == 200:
+                print("✅ Server is ready!")
+                break
+        except:
+            if i < max_retries - 1:
+                print(f"⏳ Waiting for server... ({i+1}/{max_retries})")
+                time.sleep(2)
+            else:
+                print("❌ Server not responding after multiple attempts")
+                raise
 
     try:
         # 1. Get Status
@@ -49,113 +63,134 @@ def test_api():
         print_response("Get Config", response)
         time.sleep(1)
 
-        # 3. Set State to Rainbow (Hierarchical API)
-        print("\n3️⃣  Testing POST /api/config (Rainbow Mode)")
-        response = requests.post(f"{API_BASE}/config", json={"state": "rainbow"})
-        print_response("Set Rainbow Mode", response)
+        # 3. Set Playlist with Single Effect (Rainbow)
+        print("\n3️⃣  Testing POST /api/config (Set Playlist - Rainbow)")
+        response = requests.post(
+            f"{API_BASE}/config",
+            json={"runtime": {"effects_playlist": ["rainbow"]}}
+        )
+        print_response("Set Rainbow Playlist", response)
         print("⏳ Waiting 5 seconds to observe rainbow effect...")
         time.sleep(5)
 
-        # 4. Adjust Rainbow Settings (Hierarchical)
+        # 4. Adjust Rainbow Settings
         print("\n4️⃣  Testing POST /api/config (Adjust Rainbow Settings)")
         response = requests.post(
-            f"{API_BASE}/config", json={"rainbow": {"speed": 10, "brightness": 200}}
+            f"{API_BASE}/config",
+            json={"effects": {"rainbow": {"speed": 10, "brightness": 200}}}
         )
         print_response("Adjust Rainbow Settings", response)
         print("⏳ Waiting 5 seconds to observe changes...")
         time.sleep(5)
 
-        # 5. Set State to Audio Static with Fire Effect (Hierarchical)
-        print("\n5️⃣  Testing POST /api/config (Audio Static Mode + Fire Effect)")
+        # 5. Set Effect Directly (Exits Playlist Mode)
+        print("\n5️⃣  Testing POST /api/effect/set (Fire Effect)")
         response = requests.post(
-            f"{API_BASE}/config", json={"state": "audio_static", "audio": {"static_effect": "fire"}}
+            f"{API_BASE}/effect/set",
+            json={"effect": "fire"}
         )
-        print_response("Set Audio Static Mode with Fire Effect", response)
+        print_response("Set Fire Effect (Manual Mode)", response)
         print("⏳ Waiting 5 seconds to observe fire effect...")
         time.sleep(5)
 
-        # 6. Set Volume Compensation (Hierarchical)
+        # 6. Set Volume Compensation
         print("\n6️⃣  Testing POST /api/config (Volume Compensation)")
         response = requests.post(
-            f"{API_BASE}/config", json={"audio": {"volume_compensation": 2.0, "auto_gain": False}}
+            f"{API_BASE}/config",
+            json={"audio": {"volume_compensation": 2.0, "auto_gain": False}}
         )
         print_response("Set Volume Compensation", response)
         time.sleep(1)
 
-        # 7. Set State to Audio Dynamic (Hierarchical)
-        print("\n7️⃣  Testing POST /api/config (Audio Dynamic Mode)")
-        response = requests.post(f"{API_BASE}/config", json={"state": "audio_dynamic"})
-        print_response("Set Audio Dynamic Mode", response)
-        time.sleep(1)
-
-        # 8. Set Effect Rotation (Hierarchical)
-        print("\n8️⃣  Testing POST /api/config (Fast Rotation)")
-        response = requests.post(
-            f"{API_BASE}/config", json={"rotation": {"period": 5.0, "enabled": True}}
-        )
-        print_response("Set Effect Rotation", response)
-        print("⏳ Waiting 15 seconds to observe effect rotation...")
-        time.sleep(15)
-
-        # 9. Update Multiple Config Values (Hierarchical Batch Update)
-        print("\n9️⃣  Testing POST /api/config (Hierarchical Batch Update)")
+        # 7. Set Playlist with Multiple Effects (Auto-rotation)
+        print("\n7️⃣  Testing POST /api/config (Set Playlist - Multiple Effects)")
         response = requests.post(
             f"{API_BASE}/config",
             json={
-                "rotation": {"period": 10.0},
+                "runtime": {
+                    "effects_playlist": ["spectrum_bars", "vu_meter", "fire"],
+                    "rotation_period": 5.0
+                }
+            }
+        )
+        print_response("Set Multi-Effect Playlist", response)
+        print("⏳ Waiting 15 seconds to observe effect rotation...")
+        time.sleep(15)
+
+        # 8. Add Effect to Playlist
+        print("\n8️⃣  Testing POST /api/playlist/add (Add Waterfall)")
+        response = requests.post(
+            f"{API_BASE}/playlist/add",
+            json={"effect": "waterfall"}
+        )
+        print_response("Add Waterfall to Playlist", response)
+        time.sleep(1)
+
+        # 9. Remove Effect from Playlist
+        print("\n9️⃣  Testing POST /api/playlist/remove (Remove Waterfall)")
+        response = requests.post(
+            f"{API_BASE}/playlist/remove",
+            json={"effect": "waterfall"}
+        )
+        print_response("Remove Waterfall from Playlist", response)
+        time.sleep(1)
+
+        # 10. Resume Playlist Mode
+        print("\n🔟 Testing POST /api/playlist/resume")
+        response = requests.post(f"{API_BASE}/playlist/resume")
+        print_response("Resume Playlist Mode", response)
+        print("⏳ Waiting 10 seconds to observe playlist rotation...")
+        time.sleep(10)
+
+        # 11. Update Rotation Period
+        print("\n1️⃣1️⃣  Testing POST /api/config (Update Rotation Period)")
+        response = requests.post(
+            f"{API_BASE}/config",
+            json={"runtime": {"rotation_period": 10.0}}
+        )
+        print_response("Update Rotation Period", response)
+        time.sleep(1)
+
+        # 12. Update Multiple Config Values (Hierarchical Batch Update)
+        print("\n1️⃣2️⃣  Testing POST /api/config (Hierarchical Batch Update)")
+        response = requests.post(
+            f"{API_BASE}/config",
+            json={
+                "runtime": {"rotation_period": 8.0},
                 "audio": {"volume_compensation": 1.5},
-                "rainbow": {"brightness": 100},
+                "effects": {"rainbow": {"brightness": 100}},
             },
         )
         print_response("Batch Update Config", response)
         time.sleep(1)
 
-        # 10. Turn Off
-        print("\n🔟 Testing POST /api/config (Off)")
-        response = requests.post(f"{API_BASE}/config", json={"state": "off"})
+        # 13. Set Playlist to Off
+        print("\n1️⃣3️⃣  Testing POST /api/config (Set Playlist to Off)")
+        response = requests.post(
+            f"{API_BASE}/config",
+            json={"runtime": {"effects_playlist": ["off"]}}
+        )
         print_response("Turn Off LEDs", response)
         print("⏳ Waiting 3 seconds...")
         time.sleep(3)
 
-        # 11. Turn Back On (Rainbow)
-        print("\n1️⃣1️⃣  Testing POST /api/config (Back to Rainbow)")
-        response = requests.post(f"{API_BASE}/config", json={"state": "rainbow"})
-        print_response("Back to Rainbow Mode", response)
-        time.sleep(2)
-
-        # 12. Test Legacy Flat Structure (Backward Compatibility)
-        print("\n1️⃣2️⃣  Testing Backward Compatibility (Flat Structure)")
+        # 14. Use Dot Notation
+        print("\n1️⃣4️⃣  Testing POST /api/config (Dot Notation)")
         response = requests.post(
             f"{API_BASE}/config",
             json={
-                "state": "audio_static",
-                "static_effect": "spectrum_bars",
-                "volume_compensation": 1.2,
-                "rotation_enabled": False,
-            },
-        )
-        print_response("Legacy Flat Structure Update", response)
-        time.sleep(2)
-
-        # 13. Test Dot Notation (New Feature)
-        print("\n1️⃣3️⃣  Testing Dot Notation (Flattened Parameters)")
-        response = requests.post(
-            f"{API_BASE}/config",
-            json={
-                "state": "audio_dynamic",
-                "rotation.period": 12.0,
-                "rotation.enabled": True,
+                "runtime.rotation_period": 12.0,
                 "audio.volume_compensation": 2.5,
                 "audio.auto_gain": False,
-                "rainbow.speed": 8,
-                "rainbow.brightness": 180,
+                "effects.rainbow.speed": 8,
+                "effects.rainbow.brightness": 180,
             },
         )
         print_response("Dot Notation Update", response)
         time.sleep(2)
 
-        # 14. Test Invalid Configuration Keys (Should return 400)
-        print("\n1️⃣4️⃣  Testing Invalid Configuration Keys (Error Handling)")
+        # 15. Test Invalid Configuration Keys (Should return 400)
+        print("\n1️⃣5️⃣  Testing Invalid Configuration Keys (Error Handling)")
         response = requests.post(
             f"{API_BASE}/config",
             json={
@@ -170,8 +205,8 @@ def test_api():
             print("⚠️  Warning: Expected 400 error but got", response.status_code)
         time.sleep(2)
 
-        # 15. Test Empty Configuration (Should return 400)
-        print("\n1️⃣5️⃣  Testing Empty Configuration (Error Handling)")
+        # 16. Test Empty Configuration (Should return 400)
+        print("\n1️⃣6️⃣  Testing Empty Configuration (Error Handling)")
         response = requests.post(
             f"{API_BASE}/config",
             json={},
@@ -190,8 +225,8 @@ def test_api():
 
     except requests.exceptions.ConnectionError:
         print("\n❌ Connection Error!")
-        print("   Make sure audio_reactive_integrated.py is running:")
-        print("   python3 audio_reactive_integrated.py --simulator")
+        print("   Make sure main.py is running:")
+        print("   python3 main.py --simulator")
         sys.exit(1)
     except Exception as e:
         print(f"\n❌ Error: {e}")
@@ -203,7 +238,7 @@ def test_api():
 
 if __name__ == "__main__":
     print("=" * 60)
-    print("🧪 HTTP API Test Script")
+    print("🧪 HTTP API Test Script (v2026-02-05)")
     print("=" * 60)
     test_api()
     print("\n" + "=" * 60)
