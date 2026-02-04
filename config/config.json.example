@@ -1,6 +1,18 @@
 {
   "state": "audio_dynamic",
   "enabled": true,
+  "hardware": {
+    "num_leds": 420,
+    "pin": 18
+  },
+  "network": {
+    "audio_port": 31337,
+    "audio_format": "auto",
+    "api_port": 1129
+  },
+  "simulator": {
+    "display_mode": "horizontal"
+  },
   "audio": {
     "static_effect": "frequency_wave",
     "volume_compensation": 1.0,

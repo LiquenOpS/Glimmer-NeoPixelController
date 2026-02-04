@@ -95,6 +95,18 @@ class LEDConfig:
         self.state = "audio_dynamic"
         self.enabled = True
 
+        # Hardware configuration
+        self.num_leds = LED_COUNT  # Number of LEDs (default: 420 for 5m strip)
+        self.pin = LED_PIN  # GPIO pin (default: 18)
+
+        # Network configuration
+        self.audio_port = 31337  # UDP port for audio input
+        self.audio_format = "auto"  # UDP protocol: auto, wled, eqstreamer
+        self.api_port = 1129  # HTTP API port
+
+        # Simulator configuration
+        self.display_mode = "horizontal"  # Display mode: horizontal, vertical, grid
+
         # Audio reactive mode settings
         self.static_effect = "spectrum_bars"  # Effect to use in audio_static mode
         self.rotation_enabled = True  # Whether to rotate effects in audio_dynamic mode
@@ -118,6 +130,18 @@ class LEDConfig:
             return {
                 "state": self.state,
                 "enabled": self.enabled,
+                "hardware": {
+                    "num_leds": self.num_leds,
+                    "pin": self.pin,
+                },
+                "network": {
+                    "audio_port": self.audio_port,
+                    "audio_format": self.audio_format,
+                    "api_port": self.api_port,
+                },
+                "simulator": {
+                    "display_mode": self.display_mode,
+                },
                 "audio": {
                     "static_effect": self.static_effect,
                     "volume_compensation": self.volume_compensation,
@@ -147,6 +171,46 @@ class LEDConfig:
 
             if "enabled" in kwargs:
                 self.enabled = bool(kwargs["enabled"])
+
+            # Hardware settings (hierarchical)
+            if "hardware" in kwargs:
+                hardware = kwargs["hardware"]
+                if "num_leds" in hardware:
+                    self.num_leds = max(1, int(hardware["num_leds"]))
+                if "pin" in hardware:
+                    self.pin = max(0, int(hardware["pin"]))
+
+            # Network settings (hierarchical)
+            if "network" in kwargs:
+                network = kwargs["network"]
+                if "audio_port" in network:
+                    self.audio_port = max(1, min(65535, int(network["audio_port"])))
+                if "audio_format" in network:
+                    if network["audio_format"] in ["auto", "wled", "eqstreamer"]:
+                        self.audio_format = network["audio_format"]
+                if "api_port" in network:
+                    self.api_port = max(1, min(65535, int(network["api_port"])))
+
+            # Simulator settings (hierarchical)
+            if "simulator" in kwargs:
+                simulator = kwargs["simulator"]
+                if "display_mode" in simulator:
+                    if simulator["display_mode"] in ["horizontal", "vertical", "grid"]:
+                        self.display_mode = simulator["display_mode"]
+
+            # Legacy flat structure support for hardware/network
+            if "num_leds" in kwargs:
+                self.num_leds = max(1, int(kwargs["num_leds"]))
+            if "pin" in kwargs:
+                self.pin = max(0, int(kwargs["pin"]))
+            if "audio_port" in kwargs:
+                self.audio_port = max(1, min(65535, int(kwargs["audio_port"])))
+            if "audio_format" in kwargs and kwargs["audio_format"] in ["auto", "wled", "eqstreamer"]:
+                self.audio_format = kwargs["audio_format"]
+            if "api_port" in kwargs:
+                self.api_port = max(1, min(65535, int(kwargs["api_port"])))
+            if "display_mode" in kwargs and kwargs["display_mode"] in ["horizontal", "vertical", "grid"]:
+                self.display_mode = kwargs["display_mode"]
 
             # Audio settings (hierarchical)
             if "audio" in kwargs:
@@ -2203,23 +2267,31 @@ def _draw_help_screen(stdscr, controller):
 
 def main():
     """Main entry point"""
+    # Load config file first to get default values
+    config = LEDConfig()
+    config.load()  # Load from config/config.json if exists
+
     parser = argparse.ArgumentParser(description="Integrated Audio Reactive LED Controller")
 
-    # LED options
+    # LED options (defaults from config file, can be overridden by command line)
     parser.add_argument(
         "-n",
         "--num-leds",
         type=int,
-        default=LED_COUNT_SIM,
-        help=f"Number of LEDs (default: {LED_COUNT_SIM})",
+        default=None,  # Will use config value if not provided
+        help=f"Number of LEDs (default from config: {config.num_leds})",
     )
     parser.add_argument(
-        "-p", "--pin", type=int, default=LED_PIN, help=f"GPIO pin (default: {LED_PIN})"
+        "-p",
+        "--pin",
+        type=int,
+        default=None,  # Will use config value if not provided
+        help=f"GPIO pin (default from config: {config.pin})",
     )
     parser.add_argument(
         "-e",
         "--effect",
-        default="spectrum_bars",
+        default=None,  # Will use config value if not provided
         choices=[
             "spectrum_bars",
             "vu_meter",
@@ -2234,7 +2306,7 @@ def main():
             "waterfall",
             "beat_pulse",
         ],
-        help="LED effect (default: spectrum_bars)",
+        help=f"LED effect (default from config: {config.static_effect})",
     )
 
     # Simulator options
@@ -2245,9 +2317,9 @@ def main():
     )
     parser.add_argument(
         "--display",
-        default="horizontal",
+        default=None,  # Will use config value if not provided
         choices=["horizontal", "vertical", "grid"],
-        help="Simulator display mode (default: horizontal)",
+        help=f"Simulator display mode (default from config: {config.display_mode})",
     )
     parser.add_argument(
         "--curses",
@@ -2255,19 +2327,27 @@ def main():
         help="Enable curses UI (interactive terminal interface, simulator only)",
     )
 
-    # UDP options
+    # UDP options (defaults from config file)
     parser.add_argument(
-        "--audio-port", type=int, default=31337, help="Audio input UDP port (default: 31337)"
+        "--audio-port",
+        type=int,
+        default=None,  # Will use config value if not provided
+        help=f"Audio input UDP port (default from config: {config.audio_port})",
     )
     parser.add_argument(
         "--format",
-        default="auto",
+        default=None,  # Will use config value if not provided
         choices=["auto", "wled", "eqstreamer"],
-        help="UDP protocol: auto, wled, or eqstreamer (default: auto)",
+        help=f"UDP protocol: auto, wled, or eqstreamer (default from config: {config.audio_format})",
     )
 
-    # HTTP API options
-    parser.add_argument("--api-port", type=int, default=1129, help="HTTP API port (default: 1129)")
+    # HTTP API options (defaults from config file)
+    parser.add_argument(
+        "--api-port",
+        type=int,
+        default=None,  # Will use config value if not provided
+        help=f"HTTP API port (default from config: {config.api_port})",
+    )
     parser.add_argument(
         "--no-api",
         action="store_true",
@@ -2275,6 +2355,20 @@ def main():
     )
 
     args = parser.parse_args()
+
+    # Apply config defaults for arguments not provided via command line
+    # Command line arguments override config file values
+    num_leds = args.num_leds if args.num_leds is not None else config.num_leds
+    pin = args.pin if args.pin is not None else config.pin
+    effect = args.effect if args.effect is not None else config.static_effect
+    audio_port = args.audio_port if args.audio_port is not None else config.audio_port
+    audio_format = args.format if args.format is not None else config.audio_format
+    api_port = args.api_port if args.api_port is not None else config.api_port
+    display_mode = args.display if args.display is not None else config.display_mode
+
+    # For simulator mode, use different default for num_leds
+    if args.simulator and args.num_leds is None:
+        num_leds = LED_COUNT_SIM
 
     print("=" * 60)
     print("🎵 Integrated Audio Reactive LED Controller")
@@ -2286,13 +2380,13 @@ def main():
     else:
         print("   💡 REAL LED MODE")
     print("=" * 60)
-    print(f"📊 LEDs: {args.num_leds} on GPIO {args.pin}")
-    print(f"🎨 Effect: {args.effect}")
+    print(f"📊 LEDs: {num_leds} on GPIO {pin}")
+    print(f"🎨 Effect: {effect}")
 
     if args.simulator:
-        print(f"🖥️  Display: {args.display}")
+        print(f"🖥️  Display: {display_mode}")
 
-    print(f"📡 Audio input: UDP port {args.audio_port}, format {args.format}")
+    print(f"📡 Audio input: UDP port {audio_port}, format {audio_format}")
     print()
 
     # Use curses interface for simulator mode (if --curses is specified)
@@ -2301,7 +2395,29 @@ def main():
         print("   (Press any key to continue)")
         time.sleep(1)
         try:
-            return curses.wrapper(run_with_curses, args)
+            # Create a modified args object with merged values
+            class MergedArgs:
+                def __init__(self, args, merged):
+                    self.simulator = args.simulator
+                    self.curses = args.curses
+                    self.no_api = args.no_api
+                    self.num_leds = merged['num_leds']
+                    self.pin = merged['pin']
+                    self.effect = merged['effect']
+                    self.display = merged['display_mode']
+                    self.audio_port = merged['audio_port']
+                    self.format = merged['audio_format']
+                    self.api_port = merged['api_port']
+            merged_args = MergedArgs(args, {
+                'num_leds': num_leds,
+                'pin': pin,
+                'effect': effect,
+                'display_mode': display_mode,
+                'audio_port': audio_port,
+                'audio_format': audio_format,
+                'api_port': api_port,
+            })
+            return curses.wrapper(run_with_curses, merged_args)
         except Exception as e:
             print(f"\n❌ Curses error: {e}")
             print("   Falling back to simple mode...")
@@ -2309,18 +2425,18 @@ def main():
 
     # Simple mode (default for simulator, or real LEDs)
     controller = IntegratedLEDController(
-        led_count=args.num_leds,
-        led_pin=args.pin,
-        udp_port=args.audio_port,
-        udp_protocol=args.format,
+        led_count=num_leds,
+        led_pin=pin,
+        udp_port=audio_port,
+        udp_protocol=audio_format,
         use_simulator=args.simulator,
     )
 
     # Set display mode if simulator
     if args.simulator:
-        controller.strip.display_mode = args.display
+        controller.strip.display_mode = display_mode
 
-    controller.current_effect = args.effect
+    controller.current_effect = effect
 
     if not controller.start():
         print("❌ Failed to start controller")
@@ -2328,10 +2444,10 @@ def main():
 
     # Start HTTP API server if not disabled
     if not args.no_api:
-        create_http_api(controller, port=args.api_port)
+        create_http_api(controller, port=api_port)
 
     print("🚀 Running!")
-    print(f"   Waiting for audio data on UDP port {args.audio_port}")
+    print(f"   Waiting for audio data on UDP port {audio_port}")
     print()
     print("   Supported sources:")
     print("   - LQS-IoT_EqStreamer (32-band)")
