@@ -52,8 +52,10 @@ LED_CHANNEL = 0  # PWM channel
 LED_STRIP_TYPE = None  # Leave as default
 
 
-# Available effects list
+# Available effects list (all effects are at the same level)
 AVAILABLE_EFFECTS = [
+    "off",  # Turn off all LEDs
+    "rainbow",  # Rainbow cycle (no audio needed)
     "spectrum_bars",
     "vu_meter",
     "rainbow_spectrum",
@@ -70,12 +72,14 @@ AVAILABLE_EFFECTS = [
     "white_arrow",
     "white_marquee",
 ]
-ROTATABLE_EFFECTS = [
+
+# Effects that require audio input
+AUDIO_REQUIRED_EFFECTS = {
     "spectrum_bars",
     "vu_meter",
-    # "rainbow_spectrum",
-    # "fire",
-    # "frequency_wave",
+    "rainbow_spectrum",
+    "fire",
+    "frequency_wave",
     "blurz",
     "pixels",
     "puddles",
@@ -83,16 +87,54 @@ ROTATABLE_EFFECTS = [
     "color_wave",
     "waterfall",
     "beat_pulse",
-    # "white_segments",
-]
+    "white_segments",
+    "white_arrow",
+    "white_marquee",
+}
+
+# Effects that don't require audio
+NON_AUDIO_EFFECTS = {
+    "off",
+    "rainbow",
+}
+
+# Effect metadata (for documentation/UI purposes)
+EFFECT_METADATA = {
+    "off": {"requires_audio": False, "white_only": False, "description": "Turn off all LEDs"},
+    "rainbow": {"requires_audio": False, "white_only": False, "description": "Rainbow cycle effect"},
+    "spectrum_bars": {"requires_audio": True, "white_only": False, "description": "Frequency spectrum bars"},
+    "vu_meter": {"requires_audio": True, "white_only": False, "description": "VU meter style"},
+    "rainbow_spectrum": {"requires_audio": True, "white_only": False, "description": "Rainbow spectrum visualization"},
+    "fire": {"requires_audio": True, "white_only": False, "description": "Fire effect"},
+    "frequency_wave": {"requires_audio": True, "white_only": False, "description": "Frequency wave visualization"},
+    "blurz": {"requires_audio": True, "white_only": False, "description": "Blur effect"},
+    "pixels": {"requires_audio": True, "white_only": False, "description": "Pixel-based effect"},
+    "puddles": {"requires_audio": True, "white_only": False, "description": "Puddle effect"},
+    "ripple": {"requires_audio": True, "white_only": False, "description": "Ripple effect"},
+    "color_wave": {"requires_audio": True, "white_only": False, "description": "Color wave"},
+    "waterfall": {"requires_audio": True, "white_only": False, "description": "Waterfall visualization"},
+    "beat_pulse": {"requires_audio": True, "white_only": False, "description": "Beat pulse effect"},
+    "white_segments": {"requires_audio": True, "white_only": True, "description": "White segments (white LEDs only)"},
+    "white_arrow": {"requires_audio": True, "white_only": True, "description": "White arrow (white LEDs only)"},
+    "white_marquee": {"requires_audio": True, "white_only": True, "description": "White marquee (white LEDs only)"},
+}
 
 
 class LEDConfig:
     """Configuration manager for LED controller"""
 
     def __init__(self):
-        # State: "off", "rainbow", "audio_static", "audio_dynamic"
-        self.state = "audio_dynamic"
+        # Hardware-supported effects (capabilities)
+        # This is the set of effects this hardware/profile supports.
+        # Runtime selection is controlled by runtime.playlist (below).
+        self.supported_effects = list(AVAILABLE_EFFECTS)
+
+        # Runtime playlist (what we actually run right now)
+        # - If playlist has 1 item -> fixed effect
+        # - If playlist has >1 -> auto-rotate with rotation_period
+        self.playlist_effects = ["spectrum_bars", "vu_meter", "fire"]
+        self.current_effect = self.playlist_effects[0]
+        self.rotation_period = 10.0  # Seconds between effect changes (used if playlist has multiple effects)
 
         # Hardware configuration
         self.num_leds = LED_COUNT  # Number of LEDs (default: 420 for 5m strip)
@@ -106,18 +148,14 @@ class LEDConfig:
         # Simulator configuration
         self.display_mode = "horizontal"  # Display mode: horizontal, vertical, grid
 
-        # Audio reactive mode settings
-        self.static_effect = "spectrum_bars"  # Effect to use in audio_static mode
-        self.rotation_enabled = True  # Whether to rotate effects in audio_dynamic mode
-        self.rotation_period = 10.0  # Seconds between effect changes
+        # Audio processing settings (applies to all audio-reactive effects)
+        self.audio_volume_compensation = 1.0  # Multiplier for volume (0.1 - 5.0)
+        self.audio_auto_gain = True  # Automatic gain control
 
-        # Volume compensation
-        self.volume_compensation = 1.0  # Multiplier for volume (0.1 - 5.0)
-        self.auto_gain = True  # Automatic gain control
-
-        # Rainbow mode settings
-        self.rainbow_speed = 20  # Speed of rainbow animation (ms per frame)
-        self.rainbow_brightness = 77  # Brightness for rainbow mode (0-255)
+        # Effect-specific settings (effects.*)
+        # Rainbow effect settings
+        self.effects_rainbow_speed = 20  # Speed of rainbow animation (ms per frame)
+        self.effects_rainbow_brightness = 77  # Brightness for rainbow mode (0-255)
 
         # TODO: there is deadlock so skip locking
         # self._lock = threading.Lock()
@@ -127,10 +165,21 @@ class LEDConfig:
         # with self._lock:
         if True:
             return {
-                "state": self.state,
-                "hardware": {
-                    "num_leds": self.num_leds,
-                    "pin": self.pin,
+                "runtime": {
+                    "playlist": {
+                        "effects": self.playlist_effects,
+                        "rotation_period": self.rotation_period,
+                    }
+                },
+                "audio": {
+                    "volume_compensation": self.audio_volume_compensation,
+                    "auto_gain": self.audio_auto_gain,
+                },
+                "effects": {
+                    "rainbow": {
+                        "speed": self.effects_rainbow_speed,
+                        "brightness": self.effects_rainbow_brightness,
+                    },
                 },
                 "network": {
                     "audio_port": self.audio_port,
@@ -140,31 +189,60 @@ class LEDConfig:
                 "simulator": {
                     "display_mode": self.display_mode,
                 },
-                "audio": {
-                    "static_effect": self.static_effect,
-                    "volume_compensation": self.volume_compensation,
-                    "auto_gain": self.auto_gain,
+                "hardware": {
+                    "num_leds": self.num_leds,
+                    "pin": self.pin,
+                    "supported_effects": self.supported_effects,
                 },
-                "rotation": {
-                    "enabled": self.rotation_enabled,
-                    "period": self.rotation_period,
-                },
-                "rainbow": {
-                    "speed": self.rainbow_speed,
-                    "brightness": self.rainbow_brightness,
-                },
+                # Runtime state (not saved, for API only)
+                "current_effect": self.current_effect,
+                # Metadata (for API/documentation)
                 "available_effects": AVAILABLE_EFFECTS,
-                "rotatable_effects": ROTATABLE_EFFECTS,
+                "effect_metadata": EFFECT_METADATA,
             }
 
     def update(self, **kwargs):
         """Update configuration (supports both flat and hierarchical structure)"""
         # with self._lock:
         if True:
-            # Top-level settings
-            if "state" in kwargs:
-                if kwargs["state"] in ["off", "rainbow", "audio_static", "audio_dynamic"]:
-                    self.state = kwargs["state"]
+            # Hardware capabilities
+            if "hardware" in kwargs and isinstance(kwargs["hardware"], dict):
+                hw = kwargs["hardware"]
+                if "supported_effects" in hw and isinstance(hw["supported_effects"], list):
+                    supported = [e for e in hw["supported_effects"] if e in AVAILABLE_EFFECTS]
+                    if supported:
+                        self.supported_effects = supported
+
+            # Runtime playlist (new schema)
+            if "runtime" in kwargs and isinstance(kwargs["runtime"], dict):
+                runtime = kwargs["runtime"]
+                playlist = runtime.get("playlist")
+                if isinstance(playlist, dict):
+                    if "effects" in playlist and isinstance(playlist["effects"], list):
+                        effects = [e for e in playlist["effects"] if e in AVAILABLE_EFFECTS]
+                        if effects:
+                            # Also enforce supported_effects
+                            effects = [e for e in effects if e in self.supported_effects]
+                            if effects:
+                                self.playlist_effects = effects
+                    if "rotation_period" in playlist:
+                        self.rotation_period = max(1.0, float(playlist["rotation_period"]))
+                    if "current_effect" in playlist and playlist["current_effect"] in AVAILABLE_EFFECTS:
+                        if playlist["current_effect"] in self.supported_effects:
+                            self.current_effect = playlist["current_effect"]
+
+            # Legacy flat effect settings (previous refactor)
+            if "current_effect" in kwargs and kwargs["current_effect"] in AVAILABLE_EFFECTS:
+                if kwargs["current_effect"] in self.supported_effects:
+                    self.current_effect = kwargs["current_effect"]
+            if "effect_playlist" in kwargs:
+                playlist = kwargs["effect_playlist"]
+                if isinstance(playlist, list) and len(playlist) > 0:
+                    effects = [e for e in playlist if e in AVAILABLE_EFFECTS and e in self.supported_effects]
+                    if effects:
+                        self.playlist_effects = effects
+                        if self.current_effect not in self.playlist_effects:
+                            self.current_effect = self.playlist_effects[0]
 
             # Hardware settings (hierarchical)
             if "hardware" in kwargs:
@@ -206,73 +284,100 @@ class LEDConfig:
             if "display_mode" in kwargs and kwargs["display_mode"] in ["horizontal", "vertical", "grid"]:
                 self.display_mode = kwargs["display_mode"]
 
-            # Audio settings (hierarchical)
-            if "audio" in kwargs:
+            # Audio settings (top-level, applies to all audio-reactive effects)
+            if "audio" in kwargs and isinstance(kwargs["audio"], dict):
                 audio = kwargs["audio"]
-                if "static_effect" in audio and audio["static_effect"] in AVAILABLE_EFFECTS:
-                    self.static_effect = audio["static_effect"]
                 if "volume_compensation" in audio:
-                    self.volume_compensation = max(
+                    self.audio_volume_compensation = max(
                         0.1, min(5.0, float(audio["volume_compensation"]))
                     )
                 if "auto_gain" in audio:
-                    self.auto_gain = bool(audio["auto_gain"])
+                    self.audio_auto_gain = bool(audio["auto_gain"])
+
+            # Effect-specific settings (effects.*)
+            if "effects" in kwargs and isinstance(kwargs["effects"], dict):
+                effects_cfg = kwargs["effects"]
+                if "rainbow" in effects_cfg and isinstance(effects_cfg["rainbow"], dict):
+                    r = effects_cfg["rainbow"]
+                    if "speed" in r:
+                        self.effects_rainbow_speed = max(1, min(100, int(r["speed"])))
+                    if "brightness" in r:
+                        self.effects_rainbow_brightness = max(0, min(255, int(r["brightness"])))
 
             # Rotation settings (hierarchical)
             if "rotation" in kwargs:
                 rotation = kwargs["rotation"]
-                if "enabled" in rotation:
-                    self.rotation_enabled = bool(rotation["enabled"])
                 if "period" in rotation:
                     self.rotation_period = max(1.0, float(rotation["period"]))
 
-            # Rainbow settings (hierarchical)
-            if "rainbow" in kwargs:
+            # Legacy: rainbow.* (old schema)
+            if "rainbow" in kwargs and isinstance(kwargs["rainbow"], dict):
                 rainbow = kwargs["rainbow"]
                 if "speed" in rainbow:
-                    self.rainbow_speed = max(1, min(100, int(rainbow["speed"])))
+                    self.effects_rainbow_speed = max(1, min(100, int(rainbow["speed"])))
                 if "brightness" in rainbow:
-                    self.rainbow_brightness = max(0, min(255, int(rainbow["brightness"])))
+                    self.effects_rainbow_brightness = max(0, min(255, int(rainbow["brightness"])))
 
             # Legacy flat structure support (for backward compatibility)
-            if "static_effect" in kwargs and kwargs["static_effect"] in AVAILABLE_EFFECTS:
-                self.static_effect = kwargs["static_effect"]
-
-            if "rotation_enabled" in kwargs:
-                self.rotation_enabled = bool(kwargs["rotation_enabled"])
-
             if "rotation_period" in kwargs:
                 self.rotation_period = max(1.0, float(kwargs["rotation_period"]))
+            
+            # Legacy: support setting current_effect directly
+            if "static_effect" in kwargs and kwargs["static_effect"] in AVAILABLE_EFFECTS:
+                if kwargs["static_effect"] in self.supported_effects:
+                    self.current_effect = kwargs["static_effect"]
+                    if self.current_effect not in self.playlist_effects:
+                        self.playlist_effects = [self.current_effect]
 
+            # Legacy flat structure support
             if "volume_compensation" in kwargs:
-                self.volume_compensation = max(0.1, min(5.0, float(kwargs["volume_compensation"])))
+                self.audio_volume_compensation = max(0.1, min(5.0, float(kwargs["volume_compensation"])))
 
             if "auto_gain" in kwargs:
-                self.auto_gain = bool(kwargs["auto_gain"])
+                self.audio_auto_gain = bool(kwargs["auto_gain"])
 
             if "rainbow_speed" in kwargs:
-                self.rainbow_speed = max(1, min(100, int(kwargs["rainbow_speed"])))
+                self.effects_rainbow_speed = max(1, min(100, int(kwargs["rainbow_speed"])))
 
             if "rainbow_brightness" in kwargs:
-                self.rainbow_brightness = max(0, min(255, int(kwargs["rainbow_brightness"])))
+                self.effects_rainbow_brightness = max(0, min(255, int(kwargs["rainbow_brightness"])))
 
     def save(self, filepath="config/config.json"):
         """Save configuration to file (hierarchical structure)"""
         # with self._lock:
         if True:
             config = self.get_state()
-            # Remove available_effects from saved config
+            # Remove runtime-only fields from saved config (not persisted)
+            config.pop("current_effect", None)
             config.pop("available_effects", None)
+            config.pop("effect_metadata", None)
             with open(filepath, "w", encoding="utf-8") as f:
                 json.dump(config, f, indent=2, ensure_ascii=False)
 
     def load(self, filepath="config/config.json"):
-        """Load configuration from file"""
+        """Load configuration from file (supports JSONC format with // comments)"""
         try:
-            with open(filepath, "r") as f:
-                config = json.load(f)
-                self.update(**config)
-                return True
+            with open(filepath, "r", encoding="utf-8") as f:
+                content = f.read()
+            
+            # Remove // comments (JSONC support)
+            lines = []
+            for line in content.split('\n'):
+                # Find // comment (but not inside strings)
+                comment_pos = line.find('//')
+                if comment_pos != -1:
+                    # Check if // is inside a string
+                    before_comment = line[:comment_pos]
+                    # Count unescaped quotes
+                    quote_count = before_comment.count('"') - before_comment.count('\\"')
+                    if quote_count % 2 == 0:  # Even number of quotes = not inside string
+                        line = line[:comment_pos].rstrip()
+                lines.append(line)
+            content = '\n'.join(lines)
+            
+            config = json.loads(content)
+            self.update(**config)
+            return True
         except FileNotFoundError:
             return False
         except Exception as e:
@@ -615,47 +720,65 @@ class IntegratedLEDController:
 
         while self.running:
             try:
-                # Check current state
-                state = self.config.state
+                # Runtime playlist
+                playlist = [e for e in self.config.playlist_effects if e in self.config.supported_effects]
+                if not playlist:
+                    playlist = ["off"]
+                current_effect = self.config.current_effect
+                if current_effect not in playlist:
+                    current_effect = playlist[0]
+                    self.config.current_effect = current_effect
 
-                if state == "off":
-                    # Turn off all LEDs
-                    self._clear_leds()
-                    time.sleep(0.1)
+                # Handle effect rotation if playlist has multiple effects
+                if len(playlist) > 1:
+                    if time.time() - self.last_rotation_time >= self.config.rotation_period:
+                        # Rotate to next effect in playlist
+                        try:
+                            current_idx = playlist.index(current_effect)
+                            next_idx = (current_idx + 1) % len(playlist)
+                            self.set_effect(playlist[next_idx])
+                            self.last_rotation_time = time.time()
+                        except ValueError:
+                            # Current effect not in playlist, use first one
+                            self.set_effect(playlist[0])
+                            self.last_rotation_time = time.time()
+                else:
+                    # Single effect in playlist - ensure we're using it
+                    if current_effect != playlist[0]:
+                        self.set_effect(playlist[0])
+
+                # Check if current effect requires audio
+                requires_audio = current_effect in AUDIO_REQUIRED_EFFECTS
+
+                if not requires_audio:
+                    # Effects that don't need audio (off, rainbow)
+                    if current_effect == "off":
+                        self._clear_leds()
+                        time.sleep(0.1)
+                    elif current_effect == "rainbow":
+                        self._render_rainbow()
+                        time.sleep(self.config.effects_rainbow_speed / 1000.0)
                     continue
 
-                elif state == "rainbow":
-                    # Rainbow mode - no audio data needed
-                    self._render_rainbow()
-                    time.sleep(self.config.rainbow_speed / 1000.0)
-                    continue
-
-                # Audio reactive modes (audio_static or audio_dynamic)
-                # Receive UDP packet
+                # Audio-required effects - receive UDP packet
                 audio_data = self.udp_receiver.receive()
 
                 if audio_data:
                     no_data_warning_shown = False
 
                     # Update audio data with volume compensation
-                    comp = self.config.volume_compensation if not self.config.auto_gain else 1.0
+                    comp = (
+                        self.config.audio_volume_compensation
+                        if not self.config.audio_auto_gain
+                        else 1.0
+                    )
                     self.fft_result = audio_data["fft_result"]
                     self.sample_agc = int(min(255, audio_data["sample_agc"] * comp))
                     self.sample_peak = audio_data["sample_peak"]
                     self.fft_major_peak = audio_data.get("fft_major_peak", 120.0)
                     self.fft_magnitude = audio_data.get("fft_magnitude", 0.0)
 
-                    # Handle effect rotation in audio_dynamic mode
-                    if state == "audio_dynamic" and self.config.rotation_enabled:
-                        if time.time() - self.last_rotation_time >= self.config.rotation_period:
-                            self._next_effect()
-                            self.last_rotation_time = time.time()
-                    elif state == "audio_static":
-                        # Ensure we're using the configured static effect
-                        if self.current_effect != self.config.static_effect:
-                            self.set_effect(self.config.static_effect)
-
-                    # Update LEDs
+                    # Update LEDs with current effect
                     self._update_leds()
                 else:
                     # No data received
@@ -730,7 +853,7 @@ class IntegratedLEDController:
     def _wheel(self, pos):
         """Generate rainbow colors across 0-255 positions (from ws2812_rainbow.py)"""
         # Apply brightness scaling
-        brightness_factor = self.config.rainbow_brightness / 255.0
+        brightness_factor = self.config.effects_rainbow_brightness / 255.0
 
         if pos < 85:
             r = int(pos * 3 * brightness_factor)
@@ -821,7 +944,11 @@ class IntegratedLEDController:
 
             # Calculate how many LEDs to light in this segment (height)
             # Use volume compensation if enabled
-            volume_factor = self.config.volume_compensation if not self.config.auto_gain else 1.0
+            volume_factor = (
+                self.config.audio_volume_compensation
+                if not self.config.audio_auto_gain
+                else 1.0
+            )
             height_ratio = (segment_intensity / 255.0) * volume_factor
             height_ratio = min(1.0, height_ratio)
 
@@ -951,7 +1078,11 @@ class IntegratedLEDController:
 
             # Calculate how many LEDs to light from center (half on each side)
             # Use volume compensation if enabled
-            volume_factor = self.config.volume_compensation if not self.config.auto_gain else 1.0
+            volume_factor = (
+                self.config.audio_volume_compensation
+                if not self.config.audio_auto_gain
+                else 1.0
+            )
             height_ratio = (segment_intensity / 255.0) * volume_factor
             height_ratio = min(1.0, height_ratio)
 
@@ -1275,7 +1406,11 @@ class IntegratedLEDController:
 
             # Calculate how many LEDs to light in this segment (height)
             # Use volume compensation if enabled
-            volume_factor = self.config.volume_compensation if not self.config.auto_gain else 1.0
+            volume_factor = (
+                self.config.audio_volume_compensation
+                if not self.config.audio_auto_gain
+                else 1.0
+            )
             height_ratio = (segment_intensity / 255.0) * volume_factor
             height_ratio = min(1.0, height_ratio)
 
@@ -1437,14 +1572,18 @@ class IntegratedLEDController:
         else:
             if not self.use_curses:
                 print(f"❌ Unknown effect: {effect_name}")
-                print(f"   Available effects: {', '.join(AVAILABLE_EFFECTS)}")
+                print(f"   Supported effects: {', '.join(self.config.supported_effects)}")
 
     def _print_help_hint(self):
         """Print keyboard shortcuts hint"""
         if self.enable_keyboard and not self.use_curses:
-            effect_idx = AVAILABLE_EFFECTS.index(self.current_effect) + 1
+            supported = self.config.supported_effects
+            try:
+                effect_idx = supported.index(self.current_effect) + 1
+            except ValueError:
+                effect_idx = 1
             print(
-                f"   [{effect_idx}/{len(AVAILABLE_EFFECTS)}] Press 'n'=next, 'p'=prev, 'h'=help, 'q'=quit",
+                f"   [{effect_idx}/{len(supported)}] Press 'n'=next, 'p'=prev, 'h'=help, 'q'=quit",
                 end="",
                 flush=True,
             )
@@ -1484,12 +1623,13 @@ class IntegratedLEDController:
                         # Show help
                         self._show_keyboard_help()
                     elif key.isdigit():
-                        # Direct effect selection (1-12)
+                        # Direct effect selection (1-9,0)
                         idx = int(key)
                         if idx == 0:
                             idx = 10
-                        if 1 <= idx <= len(AVAILABLE_EFFECTS):
-                            self.set_effect(AVAILABLE_EFFECTS[idx - 1])
+                        supported = self.config.supported_effects
+                        if 1 <= idx <= len(supported):
+                            self.set_effect(supported[idx - 1])
 
         finally:
             # Restore terminal settings
@@ -1500,16 +1640,30 @@ class IntegratedLEDController:
                     pass
 
     def _next_effect(self):
-        """Switch to next effect"""
-        current_idx = ROTATABLE_EFFECTS.index(self.current_effect)
-        next_idx = (current_idx + 1) % len(ROTATABLE_EFFECTS)
-        self.set_effect(ROTATABLE_EFFECTS[next_idx])
+        """Switch to next effect in supported_effects"""
+        supported = self.config.supported_effects
+        if len(supported) == 0:
+            return
+        try:
+            current_idx = supported.index(self.current_effect)
+            next_idx = (current_idx + 1) % len(supported)
+            self.set_effect(supported[next_idx])
+        except ValueError:
+            # Current effect not in supported, use first one
+            self.set_effect(supported[0])
 
     def _prev_effect(self):
-        """Switch to previous effect"""
-        current_idx = ROTATABLE_EFFECTS.index(self.current_effect)
-        prev_idx = (current_idx - 1) % len(ROTATABLE_EFFECTS)
-        self.set_effect(ROTATABLE_EFFECTS[prev_idx])
+        """Switch to previous effect in supported_effects"""
+        supported = self.config.supported_effects
+        if len(supported) == 0:
+            return
+        try:
+            current_idx = supported.index(self.current_effect)
+            prev_idx = (current_idx - 1) % len(supported)
+            self.set_effect(supported[prev_idx])
+        except ValueError:
+            # Current effect not in supported, use last one
+            self.set_effect(supported[-1])
 
     def _show_keyboard_help(self):
         """Show keyboard shortcuts"""
@@ -1523,8 +1677,9 @@ class IntegratedLEDController:
         print("  q       - Quit")
         print("  1-9,0   - Jump to effect by number")
         print()
-        print("📋 AVAILABLE EFFECTS:")
-        for i, effect in enumerate(AVAILABLE_EFFECTS, 1):
+        print("📋 SUPPORTED EFFECTS:")
+        supported = self.config.supported_effects
+        for i, effect in enumerate(supported, 1):
             marker = "👉" if effect == self.current_effect else "  "
             key = str(i % 10)  # 10 becomes 0
             print(f"  {marker} [{key}] {effect}")
@@ -1586,9 +1741,9 @@ def create_http_api(controller, port=1129):
         Convert dot notation keys to hierarchical structure.
 
         Example:
-            {"rotation.period": 5, "audio.volume_compensation": 1.5}
+            {"runtime.playlist.rotation_period": 5, "effects.audio.volume_compensation": 1.5}
         becomes:
-            {"rotation": {"period": 5}, "audio": {"volume_compensation": 1.5}}
+            {"runtime": {"playlist": {"rotation_period": 5}}, "effects": {"audio": {"volume_compensation": 1.5}}}
         """
         result = {}
 
@@ -1622,25 +1777,34 @@ def create_http_api(controller, port=1129):
 
         Hierarchical structure:
         {
-            "state": "off" | "rainbow" | "audio_static" | "audio_dynamic",
+            "runtime": {
+                "playlist": {
+                    "effects": ["spectrum_bars", "vu_meter"],
+                    "rotation_period": 10.0
+                }
+            },
             "audio": {
-                "static_effect": "effect_name",
                 "volume_compensation": 1.0,
                 "auto_gain": true
             },
-            "rotation": {
-                "enabled": true,
-                "period": 10.0
+            "effects": {
+                "rainbow": {
+                    "speed": 20,
+                    "brightness": 77
+                }
             },
-            "rainbow": {
-                "speed": 20,
-                "brightness": 77
+            "network": {...},
+            "simulator": {...},
+            "hardware": {
+                "supported_effects": ["off", "rainbow", "spectrum_bars"]
             }
         }
 
+        Note: current_effect is runtime-only (not saved). Use set_effect() API to switch effects.
+        
         Also supports:
         - Flat structure (backward compatibility): "static_effect", "rotation_period", etc.
-        - Dot notation: "rotation.period", "audio.volume_compensation", etc.
+        - Dot notation: "runtime.playlist.rotation_period", "audio.volume_compensation", etc.
         """
         try:
             data = request.get_json()
@@ -1652,15 +1816,15 @@ def create_http_api(controller, port=1129):
             data = data["led_config"]
 
             # Define valid configuration keys
-            VALID_TOP_LEVEL_KEYS = {"state"}
-            VALID_AUDIO_KEYS = {"static_effect", "volume_compensation", "auto_gain"}
-            VALID_ROTATION_KEYS = {"enabled", "period"}
-            VALID_RAINBOW_KEYS = {"speed", "brightness"}
+            VALID_TOP_LEVEL_KEYS = {"hardware", "runtime", "effects", "audio", "network", "simulator"}
+            VALID_HW_KEYS = {"supported_effects"}
+            VALID_RUNTIME_PLAYLIST_KEYS = {"effects", "rotation_period"}
+            VALID_AUDIO_KEYS = {"volume_compensation", "auto_gain"}
+            VALID_EFFECTS_RAINBOW_KEYS = {"speed", "brightness"}
             VALID_FLAT_KEYS = {
-                "static_effect",
+                "static_effect",  # Legacy: maps to current_effect
                 "volume_compensation",
                 "auto_gain",
-                "rotation_enabled",
                 "rotation_period",
                 "rainbow_speed",
                 "rainbow_brightness",
@@ -1677,14 +1841,24 @@ def create_http_api(controller, port=1129):
 
             # Check hierarchical keys
             if not has_valid_key:
+                # New schema: validate nested keys shallowly
+                if "hardware" in data and isinstance(data["hardware"], dict):
+                    if any(k in data["hardware"] for k in VALID_HW_KEYS):
+                        has_valid_key = True
+                if "runtime" in data and isinstance(data["runtime"], dict):
+                    playlist = data["runtime"].get("playlist")
+                    if isinstance(playlist, dict) and any(
+                        k in playlist for k in VALID_RUNTIME_PLAYLIST_KEYS
+                    ):
+                        has_valid_key = True
                 if "audio" in data and isinstance(data["audio"], dict):
-                    if any(key in data["audio"] for key in VALID_AUDIO_KEYS):
+                    if any(k in data["audio"] for k in VALID_AUDIO_KEYS):
                         has_valid_key = True
-                if "rotation" in data and isinstance(data["rotation"], dict):
-                    if any(key in data["rotation"] for key in VALID_ROTATION_KEYS):
-                        has_valid_key = True
-                if "rainbow" in data and isinstance(data["rainbow"], dict):
-                    if any(key in data["rainbow"] for key in VALID_RAINBOW_KEYS):
+                if "effects" in data and isinstance(data["effects"], dict):
+                    eff = data["effects"]
+                    if "rainbow" in eff and isinstance(eff["rainbow"], dict) and any(
+                        k in eff["rainbow"] for k in VALID_EFFECTS_RAINBOW_KEYS
+                    ):
                         has_valid_key = True
 
             # Check flat keys
@@ -1698,31 +1872,33 @@ def create_http_api(controller, port=1129):
                     {
                         "success": False,
                         "error": "No valid configuration keys provided. Valid keys include: "
-                        "state, audio.*, rotation.*, rainbow.*, or legacy flat keys.",
+                        "hardware, runtime, effects, network, simulator, or legacy flat keys.",
                     }
                 ), 400
 
-            # Validate state if provided
-            if "state" in data:
-                if data["state"] not in ["off", "rainbow", "audio_static", "audio_dynamic"]:
-                    return jsonify(
-                        {
-                            "success": False,
-                            "error": "Invalid state. Must be: off, rainbow, audio_static, or audio_dynamic",
-                        }
-                    ), 400
+            # Validate new schema: runtime.playlist.*
+            if "runtime" in data and isinstance(data["runtime"], dict):
+                playlist = data["runtime"].get("playlist")
+                if isinstance(playlist, dict):
+                    if "effects" in playlist:
+                        effects = playlist["effects"]
+                        if not isinstance(effects, list) or len(effects) == 0:
+                            return jsonify(
+                                {
+                                    "success": False,
+                                    "error": "runtime.playlist.effects must be a non-empty list",
+                                }
+                            ), 400
+                        invalid = [e for e in effects if e not in AVAILABLE_EFFECTS]
+                        if invalid:
+                            return jsonify(
+                                {
+                                    "success": False,
+                                    "error": f"Invalid effects in playlist: {invalid}. Must be from: {AVAILABLE_EFFECTS}",
+                                }
+                            ), 400
 
-            # Validate effect if provided
-            if "audio" in data and "static_effect" in data["audio"]:
-                if data["audio"]["static_effect"] not in AVAILABLE_EFFECTS:
-                    return jsonify(
-                        {
-                            "success": False,
-                            "error": f"Invalid effect. Must be one of: {AVAILABLE_EFFECTS}",
-                        }
-                    ), 400
-
-            # Legacy flat structure support
+            # Legacy flat structure support - static_effect maps to current_effect
             if "static_effect" in data:
                 if data["static_effect"] not in AVAILABLE_EFFECTS:
                     return jsonify(
@@ -1739,12 +1915,20 @@ def create_http_api(controller, port=1129):
             controller.config.save()
 
             # Reset rotation timer if rotation settings changed
-            if "rotation" in data or "rotation_period" in data or "rotation_enabled" in data:
+            if "rotation_period" in data or ("runtime" in data and "playlist" in (data.get("runtime") or {})):
                 controller.last_rotation_time = time.time()
 
-            # Update current effect if static_effect changed (for immediate effect)
-            if "audio" in data and "static_effect" in data["audio"]:
-                controller.set_effect(data["audio"]["static_effect"])
+            # If playlist changed, ensure current_effect is in playlist (start from first if not)
+            if "runtime" in data and isinstance(data["runtime"], dict):
+                playlist = data["runtime"].get("playlist")
+                if isinstance(playlist, dict) and "effects" in playlist:
+                    pl = controller.config.playlist_effects
+                    if pl and controller.current_effect not in pl:
+                        controller.set_effect(pl[0])
+            
+            # Legacy: support static_effect and current_effect (for immediate switching via API)
+            if "current_effect" in data:
+                controller.set_effect(data["current_effect"])
             elif "static_effect" in data:
                 controller.set_effect(data["static_effect"])
 
@@ -1843,8 +2027,9 @@ def run_with_curses(stdscr, args):
                         idx = int(chr(key))
                         if idx == 0:
                             idx = 10
-                        if 1 <= idx <= len(AVAILABLE_EFFECTS):
-                            controller.set_effect(AVAILABLE_EFFECTS[idx - 1])
+                        supported = controller.config.supported_effects
+                        if 1 <= idx <= len(supported):
+                            controller.set_effect(supported[idx - 1])
             except:
                 pass
 
@@ -1933,7 +2118,11 @@ def _draw_curses_ui(stdscr, controller, args):
     line += 1
 
     # Current effect
-    effect_idx = AVAILABLE_EFFECTS.index(controller.current_effect) + 1
+    supported = controller.config.supported_effects
+    try:
+        effect_idx = supported.index(controller.current_effect) + 1
+    except ValueError:
+        effect_idx = 1
     try:
         stdscr.move(line, 0)
         stdscr.clrtoeol()
@@ -1941,7 +2130,7 @@ def _draw_curses_ui(stdscr, controller, args):
         stdscr.addstr(
             line,
             15,
-            f"[{effect_idx}/{len(AVAILABLE_EFFECTS)}] {controller.current_effect}",
+            f"[{effect_idx}/{len(supported)}] {controller.current_effect}",
             curses.color_pair(5) | curses.A_BOLD,
         )
     except:
@@ -2236,9 +2425,10 @@ def _draw_help_screen(stdscr, controller):
 
     # Effects list
     try:
-        stdscr.addstr(line, 4, "AVAILABLE EFFECTS:", curses.A_BOLD | curses.A_UNDERLINE)
+        stdscr.addstr(line, 4, "SUPPORTED EFFECTS:", curses.A_BOLD | curses.A_UNDERLINE)
         line += 1
-        for i, effect in enumerate(AVAILABLE_EFFECTS, 1):
+        supported = controller.config.supported_effects
+        for i, effect in enumerate(supported, 1):
             marker = "👉" if effect == controller.current_effect else "  "
             key = str(i % 10)
             try:
@@ -2300,7 +2490,7 @@ def main():
             "waterfall",
             "beat_pulse",
         ],
-        help=f"LED effect (default from config: {config.static_effect})",
+        help=f"LED effect (default from config: {config.current_effect})",
     )
 
     # Simulator options
@@ -2354,7 +2544,7 @@ def main():
     # Command line arguments override config file values
     num_leds = args.num_leds if args.num_leds is not None else config.num_leds
     pin = args.pin if args.pin is not None else config.pin
-    effect = args.effect if args.effect is not None else config.static_effect
+    effect = args.effect if args.effect is not None else config.current_effect
     audio_port = args.audio_port if args.audio_port is not None else config.audio_port
     audio_format = args.format if args.format is not None else config.audio_format
     api_port = args.api_port if args.api_port is not None else config.api_port

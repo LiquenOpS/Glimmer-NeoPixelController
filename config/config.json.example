@@ -1,8 +1,19 @@
 {
-  "state": "audio_dynamic",
-  "hardware": {
-    "num_leds": 420,
-    "pin": 18
+  "runtime": {
+    "playlist": {
+      "effects": ["spectrum_bars", "vu_meter", "fire"],
+      "rotation_period": 10.0
+    }
+  },
+  "audio": {
+    "volume_compensation": 1.0,
+    "auto_gain": false
+  },
+  "effects": {
+    "rainbow": {
+      "speed": 10,
+      "brightness": 255
+    }
   },
   "network": {
     "audio_port": 31337,
@@ -12,17 +23,27 @@
   "simulator": {
     "display_mode": "horizontal"
   },
-  "audio": {
-    "static_effect": "frequency_wave",
-    "volume_compensation": 1.0,
-    "auto_gain": false
-  },
-  "rotation": {
-    "enabled": true,
-    "period": 5.0
-  },
-  "rainbow": {
-    "speed": 10,
-    "brightness": 255
+  "hardware": {
+    "num_leds": 420,
+    "pin": 18,
+    "supported_effects": [
+      "off",  // no-audio: Turn off all LEDs
+      "rainbow",  // no-audio: Rainbow cycle effect
+      "spectrum_bars",  // audio: Frequency spectrum bars
+      "vu_meter",  // audio: VU meter style
+      "rainbow_spectrum",  // audio: Rainbow spectrum visualization
+      "fire",  // audio: Fire effect
+      "frequency_wave",  // audio: Frequency wave visualization
+      "blurz",  // audio: Blur effect
+      "pixels",  // audio: Pixel-based effect
+      "puddles",  // audio: Puddle effect
+      "ripple",  // audio: Ripple effect
+      "color_wave",  // audio: Color wave
+      "waterfall",  // audio: Waterfall visualization
+      "beat_pulse",  // audio: Beat pulse effect
+      "white_segments",  // audio, white-only: White segments (white LEDs only)
+      "white_arrow",  // audio, white-only: White arrow (white LEDs only)
+      "white_marquee"  // audio, white-only: White marquee (white LEDs only)
+    ]
   }
 }
