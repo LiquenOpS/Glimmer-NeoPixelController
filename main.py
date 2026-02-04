@@ -685,7 +685,7 @@ class IntegratedLEDController:
         self.fft_magnitude = 0.0
 
         self.running = False
-        self.current_effect = "spectrum_bars"
+        # current_effect will be set from config in start() method
 
         # Effect state variables
         self.effect_state = {
@@ -718,6 +718,20 @@ class IntegratedLEDController:
     def start(self):
         """Start the controller"""
         print("🎵 Starting Integrated Audio Reactive LED Controller")
+
+        # Set current_effect from config (playlist first effect or current_effect)
+        playlist = [e for e in self.config.playlist_effects if e in self.config.supported_effects]
+        if playlist:
+            # Use first effect in playlist as starting point
+            self.current_effect = playlist[0]
+            self.config.current_effect = self.current_effect
+        elif self.config.current_effect:
+            # Fallback to config's current_effect if playlist is empty
+            self.current_effect = self.config.current_effect
+        else:
+            # Last resort: use "off"
+            self.current_effect = "off"
+            self.config.current_effect = "off"
 
         self.udp_receiver.start()
         self.running = True
@@ -2579,7 +2593,9 @@ def main():
     # Command line arguments override config file values
     num_leds = args.num_leds if args.num_leds is not None else config.num_leds
     pin = args.pin if args.pin is not None else config.pin
-    effect = args.effect if args.effect is not None else config.current_effect
+    # Default effect should be first in playlist, not current_effect (which is runtime state)
+    default_effect = config.playlist_effects[0] if config.playlist_effects else config.current_effect
+    effect = args.effect if args.effect is not None else default_effect
     audio_port = args.audio_port if args.audio_port is not None else config.audio_port
     audio_format = args.format if args.format is not None else config.audio_format
     api_port = args.api_port if args.api_port is not None else config.api_port
@@ -2655,7 +2671,11 @@ def main():
     if args.simulator:
         controller.strip.display_mode = display_mode
 
+    # Set effect (will be overridden by start() if not in playlist, but keep for display)
     controller.current_effect = effect
+    # Also update config to keep in sync
+    if effect in controller.config.supported_effects:
+        controller.config.current_effect = effect
 
     if not controller.start():
         print("❌ Failed to start controller")
