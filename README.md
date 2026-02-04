@@ -23,7 +23,8 @@ cd Glimmer
 - 🔮 **Emulator Mode**: Terminal-based simulator for development without hardware
 - 🌐 **HTTP API**: RESTful API for remote control and configuration
 - ⚙️ **Flexible Configuration**: JSON-based configuration with hierarchical structure
-- 🔄 **Effect Rotation**: Automatic effect rotation with configurable period
+- 🔄 **Playlist System**: Automatic effect rotation with playlist-based configuration
+- 🎛️ **Dual Mode Control**: Playlist mode (auto-rotation) and manual mode (direct effect switching)
 - 🎛️ **Real-time Control**: Keyboard controls and HTTP API for live adjustments
 
 ## Requirements
@@ -132,11 +133,14 @@ python3 main.py --no-api
 ### Keyboard Controls
 
 When running (non-curses mode):
-- `n` - Next effect
-- `p` - Previous effect
-- `1-9, 0` - Jump to specific effect
+- `n` - Next effect (switches to manual mode)
+- `p` - Previous effect (switches to manual mode)
+- `r` - Resume playlist mode (auto-rotation)
+- `1-9, 0` - Jump to specific effect (0 = first effect, 1-9 = effects 2-10)
 - `h` - Show help
 - `q` - Quit
+
+**Note**: Manual switching (n/p keys or number keys) exits playlist mode. Use `r` key or `POST /api/playlist/resume` to return to auto-rotation.
 
 ## Configuration
 
@@ -144,30 +148,48 @@ Configuration is stored in `config/config.json`. Copy `config/config.json.exampl
 
 ```json
 {
-  "state": "audio_dynamic",
-  "enabled": true,
+  "runtime": {
+    "effects_playlist": ["spectrum_bars", "vu_meter", "fire"],
+    "rotation_period": 10.0
+  },
   "audio": {
-    "static_effect": "frequency_wave",
     "volume_compensation": 1.0,
     "auto_gain": false
   },
-  "rotation": {
-    "enabled": true,
-    "period": 5.0
+  "effects": {
+    "rainbow": {
+      "speed": 10,
+      "brightness": 255
+    }
   },
-  "rainbow": {
-    "speed": 10,
-    "brightness": 255
+  "network": {
+    "audio_port": 31337,
+    "audio_format": "auto",
+    "api_port": 1129
+  },
+  "simulator": {
+    "display_mode": "horizontal"
+  },
+  "hardware": {
+    "num_leds": 420,
+    "pin": 18,
+    "supported_effects": ["off", "rainbow", "spectrum_bars", ...]
   }
 }
 ```
 
-### Configuration States
+### Configuration Overview
 
-- `off` - LEDs turned off
-- `rainbow` - Rainbow cycle effect
-- `audio_static` - Single audio-reactive effect
-- `audio_dynamic` - Audio-reactive with automatic effect rotation
+- **`runtime.effects_playlist`**: Array of effects to rotate automatically (rotation enabled when >1 effect)
+- **`runtime.rotation_period`**: Seconds between effect changes
+- **`hardware.supported_effects`**: List of effects this hardware supports
+- **`audio.*`**: Audio processing settings (applies to all audio-reactive effects)
+- **`effects.*`**: Effect-specific settings (e.g., `effects.rainbow.speed`)
+- **`network.*`**: Network settings (audio port, API port)
+- **`simulator.*`**: Simulator display settings
+- **`hardware.*`**: Hardware settings (LED count, GPIO pin)
+
+> **⚠️ Breaking Changes**: If upgrading from v2025-11-29, see [Breaking Changes Guide](./docs/CHANGELOG_v20260205.md) for migration instructions.
 
 ## HTTP API
 
@@ -185,20 +207,54 @@ Get current configuration.
 Update configuration. Supports hierarchical structure and dot notation:
 
 ```bash
-# Set state
+# Set playlist with multiple effects
 curl -X POST http://localhost:1129/api/config \
   -H "Content-Type: application/json" \
-  -d '{"state": "rainbow"}'
+  -d '{"runtime": {"effects_playlist": ["spectrum_bars", "vu_meter"], "rotation_period": 10.0}}'
 
 # Update nested config (hierarchical)
 curl -X POST http://localhost:1129/api/config \
   -H "Content-Type: application/json" \
-  -d '{"rainbow": {"speed": 10, "brightness": 200}}'
+  -d '{"effects": {"rainbow": {"speed": 10, "brightness": 200}}}'
 
 # Update using dot notation
 curl -X POST http://localhost:1129/api/config \
   -H "Content-Type: application/json" \
-  -d '{"rotation.period": 15.0, "audio.volume_compensation": 2.0}'
+  -d '{"runtime.rotation_period": 15.0, "audio.volume_compensation": 2.0}'
+```
+
+#### POST `/api/effect/set`
+Set effect directly (exits playlist mode):
+
+```bash
+curl -X POST http://localhost:1129/api/effect/set \
+  -H "Content-Type: application/json" \
+  -d '{"effect": "fire"}'
+```
+
+#### POST `/api/playlist/resume`
+Resume playlist mode (switch back to auto-rotation):
+
+```bash
+curl -X POST http://localhost:1129/api/playlist/resume
+```
+
+#### POST `/api/playlist/add`
+Add effect to playlist:
+
+```bash
+curl -X POST http://localhost:1129/api/playlist/add \
+  -H "Content-Type: application/json" \
+  -d '{"effect": "waterfall"}'
+```
+
+#### POST `/api/playlist/remove`
+Remove effect from playlist:
+
+```bash
+curl -X POST http://localhost:1129/api/playlist/remove \
+  -H "Content-Type: application/json" \
+  -d '{"effect": "waterfall"}'
 ```
 
 ### Testing the API
