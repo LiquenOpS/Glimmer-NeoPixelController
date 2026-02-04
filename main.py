@@ -703,6 +703,9 @@ class IntegratedLEDController:
 
         # Effect rotation
         self.last_rotation_time = time.time()
+        
+        # Playlist mode: True = auto-rotate through playlist, False = manual mode
+        self.playlist_mode = True  # Start in playlist mode
 
         # Rainbow mode state
         self.rainbow_offset = 0
@@ -754,32 +757,40 @@ class IntegratedLEDController:
 
         while self.running:
             try:
-                # Runtime playlist
-                playlist = [e for e in self.config.playlist_effects if e in self.config.supported_effects]
-                if not playlist:
-                    playlist = ["off"]
-                current_effect = self.config.current_effect
-                if current_effect not in playlist:
-                    current_effect = playlist[0]
-                    self.config.current_effect = current_effect
-
-                # Handle effect rotation if playlist has multiple effects
-                if len(playlist) > 1:
-                    if time.time() - self.last_rotation_time >= self.config.rotation_period:
-                        # Rotate to next effect in playlist
-                        try:
-                            current_idx = playlist.index(current_effect)
-                            next_idx = (current_idx + 1) % len(playlist)
-                            self.set_effect(playlist[next_idx])
-                            self.last_rotation_time = time.time()
-                        except ValueError:
-                            # Current effect not in playlist, use first one
-                            self.set_effect(playlist[0])
-                            self.last_rotation_time = time.time()
-                else:
-                    # Single effect in playlist - ensure we're using it
-                    if current_effect != playlist[0]:
-                        self.set_effect(playlist[0])
+                current_effect = self.current_effect  # Use instance variable
+                
+                # Playlist mode: auto-rotate through playlist
+                if self.playlist_mode:
+                    playlist = [e for e in self.config.playlist_effects if e in self.config.supported_effects]
+                    if not playlist:
+                        playlist = ["off"]
+                    
+                    # If current effect not in playlist, switch to first in playlist
+                    if current_effect not in playlist:
+                        self.set_effect(playlist[0], update_playlist_mode=False)
+                        current_effect = self.current_effect
+                    
+                    # Handle effect rotation if playlist has multiple effects
+                    if len(playlist) > 1:
+                        if time.time() - self.last_rotation_time >= self.config.rotation_period:
+                            # Rotate to next effect in playlist
+                            try:
+                                current_idx = playlist.index(current_effect)
+                                next_idx = (current_idx + 1) % len(playlist)
+                                self.set_effect(playlist[next_idx], update_playlist_mode=False)
+                                self.last_rotation_time = time.time()
+                                current_effect = self.current_effect
+                            except ValueError:
+                                # Current effect not in playlist, use first one
+                                self.set_effect(playlist[0], update_playlist_mode=False)
+                                self.last_rotation_time = time.time()
+                                current_effect = self.current_effect
+                    else:
+                        # Single effect in playlist - ensure we're using it
+                        if current_effect != playlist[0]:
+                            self.set_effect(playlist[0], update_playlist_mode=False)
+                            current_effect = self.current_effect
+                # Manual mode: stay on current effect, no auto-rotation
 
                 # Check if current effect requires audio
                 requires_audio = current_effect in AUDIO_REQUIRED_EFFECTS
@@ -1595,18 +1606,41 @@ class IntegratedLEDController:
 
         return r, g, b
 
-    def set_effect(self, effect_name):
-        """Change LED effect"""
+    def set_effect(self, effect_name, update_playlist_mode=True):
+        """
+        Change LED effect
+        
+        Args:
+            effect_name: Name of the effect to switch to
+            update_playlist_mode: If True, exit playlist mode when manually switching (default: True)
+        """
         if effect_name in AVAILABLE_EFFECTS:
             self.current_effect = effect_name
+            # Also update config to keep in sync
+            self.config.current_effect = effect_name
+            # Exit playlist mode if manually switching (unless explicitly told not to)
+            if update_playlist_mode:
+                self.playlist_mode = False
             # Only print if not using curses
             if not self.use_curses:
-                print(f"\r🎨 Effect changed to: {effect_name}                    ")
+                mode_indicator = "🔀 Manual" if not self.playlist_mode else "🔄 Playlist"
+                print(f"\r🎨 Effect changed to: {effect_name} ({mode_indicator})                    ")
                 self._print_help_hint()
         else:
             if not self.use_curses:
                 print(f"❌ Unknown effect: {effect_name}")
                 print(f"   Supported effects: {', '.join(self.config.supported_effects)}")
+    
+    def resume_playlist_mode(self):
+        """Resume playlist mode (switch back to auto-rotation)"""
+        self.playlist_mode = True
+        # Switch to first effect in playlist
+        playlist = [e for e in self.config.playlist_effects if e in self.config.supported_effects]
+        if playlist:
+            self.set_effect(playlist[0], update_playlist_mode=False)
+        if not self.use_curses:
+            print(f"\r🔄 Resumed playlist mode                    ")
+            self._print_help_hint()
 
     def _print_help_hint(self):
         """Print keyboard shortcuts hint"""
@@ -1648,16 +1682,19 @@ class IntegratedLEDController:
                         self.running = False
                         break
                     elif key == "n":
-                        # Next effect
+                        # Next effect (exits playlist mode)
                         self._next_effect()
                     elif key == "p":
-                        # Previous effect
+                        # Previous effect (exits playlist mode)
                         self._prev_effect()
+                    elif key == "r":
+                        # Resume playlist mode
+                        self.resume_playlist_mode()
                     elif key == "h":
                         # Show help
                         self._show_keyboard_help()
                     elif key.isdigit():
-                        # Direct effect selection (1-9,0)
+                        # Direct effect selection (1-9,0) (exits playlist mode)
                         idx = int(key)
                         if idx == 0:
                             idx = 10
@@ -1705,11 +1742,12 @@ class IntegratedLEDController:
         print("=" * 60)
         print("⌨️  KEYBOARD SHORTCUTS")
         print("=" * 60)
-        print("  n       - Next effect")
-        print("  p       - Previous effect")
+        print("  n       - Next effect (manual mode)")
+        print("  p       - Previous effect (manual mode)")
+        print("  r       - Resume playlist mode (auto-rotation)")
         print("  h       - Show this help")
         print("  q       - Quit")
-        print("  1-9,0   - Jump to effect by number")
+        print("  1-9,0   - Jump to effect by number (manual mode)")
         print()
         print("📋 SUPPORTED EFFECTS:")
         supported = self.config.supported_effects
@@ -1758,6 +1796,7 @@ def create_http_api(controller, port=1129):
             {
                 "running": controller.running,
                 "current_effect": controller.current_effect,
+                "playlist_mode": controller.playlist_mode,
                 "config": controller.config.get_state(),
                 "audio_active": controller.udp_receiver.is_active(),
                 "volume": controller.sample_agc,
@@ -1970,6 +2009,116 @@ def create_http_api(controller, port=1129):
         except Exception as e:
             return jsonify({"success": False, "error": str(e)}), 400
 
+    @app.route("/api/effect/set", methods=["POST"])
+    def set_effect():
+        """Set effect directly (exits playlist mode)"""
+        try:
+            data = request.get_json()
+            if not data or "effect" not in data:
+                return jsonify({"success": False, "error": "Missing 'effect' field"}), 400
+            
+            effect = data["effect"]
+            if effect not in AVAILABLE_EFFECTS:
+                return jsonify({
+                    "success": False,
+                    "error": f"Invalid effect. Must be one of: {AVAILABLE_EFFECTS}",
+                }), 400
+            
+            controller.set_effect(effect, update_playlist_mode=True)
+            return jsonify({
+                "success": True,
+                "effect": controller.current_effect,
+                "playlist_mode": controller.playlist_mode,
+            })
+        except Exception as e:
+            return jsonify({"success": False, "error": str(e)}), 400
+
+    @app.route("/api/playlist/resume", methods=["POST"])
+    def resume_playlist():
+        """Resume playlist mode (switch back to auto-rotation)"""
+        try:
+            controller.resume_playlist_mode()
+            return jsonify({
+                "success": True,
+                "playlist_mode": controller.playlist_mode,
+                "current_effect": controller.current_effect,
+            })
+        except Exception as e:
+            return jsonify({"success": False, "error": str(e)}), 400
+
+    @app.route("/api/playlist/add", methods=["POST"])
+    def add_to_playlist():
+        """Add effect to playlist"""
+        try:
+            data = request.get_json()
+            if not data or "effect" not in data:
+                return jsonify({"success": False, "error": "Missing 'effect' field"}), 400
+            
+            effect = data["effect"]
+            if effect not in AVAILABLE_EFFECTS:
+                return jsonify({
+                    "success": False,
+                    "error": f"Invalid effect. Must be one of: {AVAILABLE_EFFECTS}",
+                }), 400
+            
+            if effect not in controller.config.supported_effects:
+                return jsonify({
+                    "success": False,
+                    "error": f"Effect '{effect}' is not in supported_effects",
+                }), 400
+            
+            playlist = controller.config.playlist_effects.copy()
+            if effect not in playlist:
+                playlist.append(effect)
+                controller.config.playlist_effects = playlist
+                controller.config.save()
+            
+            return jsonify({
+                "success": True,
+                "playlist": controller.config.playlist_effects,
+            })
+        except Exception as e:
+            return jsonify({"success": False, "error": str(e)}), 400
+
+    @app.route("/api/playlist/remove", methods=["POST"])
+    def remove_from_playlist():
+        """Remove effect from playlist"""
+        try:
+            data = request.get_json()
+            if not data or "effect" not in data:
+                return jsonify({"success": False, "error": "Missing 'effect' field"}), 400
+            
+            effect = data["effect"]
+            playlist = controller.config.playlist_effects.copy()
+            
+            if effect not in playlist:
+                return jsonify({
+                    "success": False,
+                    "error": f"Effect '{effect}' is not in playlist",
+                }), 400
+            
+            if len(playlist) <= 1:
+                return jsonify({
+                    "success": False,
+                    "error": "Cannot remove last effect from playlist (must have at least one)",
+                }), 400
+            
+            playlist.remove(effect)
+            controller.config.playlist_effects = playlist
+            
+            # If current effect was removed and we're in playlist mode, switch to first in playlist
+            if controller.playlist_mode and controller.current_effect == effect:
+                controller.set_effect(playlist[0], update_playlist_mode=False)
+            
+            controller.config.save()
+            
+            return jsonify({
+                "success": True,
+                "playlist": controller.config.playlist_effects,
+            })
+        except Exception as e:
+            return jsonify({"success": False, "error": str(e)}), 400
+
     # Start API server in background thread
     def run_api():
         app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False)
@@ -2054,6 +2203,8 @@ def run_with_curses(stdscr, args):
                         controller._next_effect()
                     elif key == ord("p") or key == ord("P"):
                         controller._prev_effect()
+                    elif key == ord("r") or key == ord("R"):
+                        controller.resume_playlist_mode()
                     elif key == ord("h") or key == ord("H"):
                         _draw_help_screen(stdscr, controller)
                         stdscr.getch()  # Wait for keypress
@@ -2444,9 +2595,11 @@ def _draw_help_screen(stdscr, controller):
     try:
         stdscr.addstr(line, 4, "CONTROLS:", curses.A_BOLD | curses.A_UNDERLINE)
         line += 1
-        stdscr.addstr(line, 4, "N       - Next effect")
+        stdscr.addstr(line, 4, "N       - Next effect (manual mode)")
         line += 1
-        stdscr.addstr(line, 4, "P       - Previous effect")
+        stdscr.addstr(line, 4, "P       - Previous effect (manual mode)")
+        line += 1
+        stdscr.addstr(line, 4, "R       - Resume playlist mode (auto-rotation)")
         line += 1
         stdscr.addstr(line, 4, "H       - Show this help")
         line += 1
@@ -2699,9 +2852,9 @@ def main():
         print()
         mode_label = "Simple Mode" if args.simulator else "Real LED Mode"
         print(f"⌨️  KEYBOARD CONTROLS ({mode_label}):")
-        print("   n = Next effect    p = Previous effect")
+        print("   n = Next effect (manual)    p = Previous effect (manual)    r = Resume playlist")
         print("   h = Show help      q = Quit")
-        print("   1-9,0 = Jump to effect")
+        print("   1-9,0 = Jump to effect (manual)")
         print()
         controller._print_help_hint()
     else:
