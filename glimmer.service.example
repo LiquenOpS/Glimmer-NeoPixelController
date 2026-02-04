@@ -4,19 +4,14 @@ After=network.target
 
 [Service]
 Type=simple
-User=liquenops
+# Run as root to access /dev/mem for GPIO control (rpi_ws281x requires root)
 WorkingDirectory=/home/liquenops/Glimmer
-ExecStart=/usr/bin/python3 /home/liquenops/Glimmer/main.py
+# Use Python from virtual environment
+ExecStart=/home/liquenops/Glimmer/venv/bin/python3 /home/liquenops/Glimmer/main.py --api-port 1129 --audio-port 31337
 Restart=always
 RestartSec=10
 StandardOutput=journal
 StandardError=journal
-
-# For simulator mode, use:
-# ExecStart=/usr/bin/python3 /home/liquenops/Glimmer/main.py --simulator
-
-# For custom options:
-# ExecStart=/usr/bin/python3 /home/liquenops/Glimmer/main.py --api-port 1129 --audio-port 31337
 
 [Install]
 WantedBy=multi-user.target

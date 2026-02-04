@@ -237,21 +237,25 @@ Make sure the controller is running first!
 sudo cp glimmer.service.example /etc/systemd/system/glimmer.service
 ```
 
-2. Edit `/etc/systemd/system/glimmer.service` and update paths:
-   - `WorkingDirectory` - Path to project directory
-   - `ExecStart` - Full path to `main.py`
-   - `User` - User to run as
-
-3. Enable and start:
+2. Enable and start:
 ```bash
 sudo systemctl daemon-reload
 sudo systemctl enable glimmer
 sudo systemctl start glimmer
 ```
 
-4. Check status:
+3. Check status:
 ```bash
 sudo systemctl status glimmer
+```
+
+4. View logs:
+```bash
+# Real-time logs
+sudo journalctl -u glimmer -f
+
+# Recent logs (last 100 lines)
+sudo journalctl -u glimmer -n 100
 ```
 
 ## Project Structure
@@ -302,9 +306,9 @@ python3 tests/ws2812_control.py
 
 ### Permission Issues (Raspberry Pi)
 
-If you get permission errors accessing GPIO:
+If you get `Can't open /dev/mem: Permission denied` errors:
 
-**Option 1: Add user to gpio group** (recommended):
+**Option 1: Add user to gpio group**:
 ```bash
 sudo usermod -a -G gpio $USER
 # Log out and back in
