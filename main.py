@@ -15,6 +15,7 @@ Output Targets:
 import argparse
 import curses
 import json
+import logging
 import select
 import socket
 import struct
@@ -26,15 +27,25 @@ from collections import deque
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 
+# Logging: one line per message for journald; no \r or interactive-only noise when not TTY
+log = logging.getLogger("glimmer")
+if not log.handlers:
+    _log_h = logging.StreamHandler(sys.stdout)
+    _log_h.setFormatter(logging.Formatter("%(levelname)s: %(message)s"))
+    log.addHandler(_log_h)
+    log.setLevel(logging.INFO)
+# Set in main() after parse; used to decide whether to print stats/hints
+_is_tty = True
+
 # Check for simulator mode
 USE_SIMULATOR = "--simulator" in sys.argv
 
 # Import LED control
 if USE_SIMULATOR:
-    print("🔮 Using LED Simulator mode")
+    log.info("Using LED Simulator mode")
     from ws281x_emulator import Color, PixelStrip
 else:
-    print("💡 Using Real LED mode")
+    log.info("Using Real LED mode")
     from rpi_ws281x import Color, PixelStrip
 
 
@@ -370,16 +381,13 @@ class LEDConfig:
             self.update(**config)
             return True
         except FileNotFoundError:
-            print(f"❌ Config file not found: {filepath}")
-            print("   Please create config/config.json (copy from config/config.json.example)")
+            log.error("Config file not found: %s - copy from config/config.json.example", filepath)
             return False
         except json.JSONDecodeError as e:
-            print(f"❌ Error parsing config file: {e}")
-            print(f"   File: {filepath}")
+            log.error("Error parsing config file: %s - File: %s", e, filepath)
             return False
         except Exception as e:
-            print(f"❌ Error loading config: {e}")
-            print(f"   File: {filepath}")
+            log.error("Error loading config: %s - File: %s", e, filepath)
             return False
 
 
@@ -411,7 +419,7 @@ class UDPAudioReceiver:
         """Start listening"""
         self.sock.bind(("", self.port))
         self.running = True
-        print(f"📡 UDP receiver listening on port {self.port} (protocol: {self.protocol})")
+        log.info("UDP receiver listening on port %s (protocol: %s)", self.port, self.protocol)
 
     def receive(self):
         """Receive and parse packet"""
@@ -444,7 +452,7 @@ class UDPAudioReceiver:
         except socket.timeout:
             return None
         except Exception as e:
-            print(f"❌ UDP receive error: {e}")
+            log.warning("UDP receive error: %s", e)
             return None
 
     def _parse_eqstreamer(self, data):
@@ -706,7 +714,7 @@ class IntegratedLEDController:
 
     def start(self):
         """Start the controller"""
-        print("🎵 Starting Integrated Audio Reactive LED Controller")
+        log.info("Starting Integrated Audio Reactive LED Controller")
 
         # Set current_effect from config (playlist first effect)
         # playlist_effects should be validated in main() before reaching here
@@ -733,7 +741,7 @@ class IntegratedLEDController:
             self.keyboard_thread = threading.Thread(target=self._keyboard_loop, daemon=True)
             self.keyboard_thread.start()
 
-        print("✅ Controller started")
+        log.info("Controller started")
         return True
 
     def _process_loop(self):
@@ -819,18 +827,14 @@ class IntegratedLEDController:
                     # No data received - only show warning in playlist mode with audio-required effects
                     if (self.playlist_mode and playlist_has_audio_effects and 
                         not self.udp_receiver.is_active() and not no_data_warning_shown):
-                        print("\n⚠️  No UDP data received for 3 seconds")
-                        print("   Waiting for audio source...")
+                        log.warning("No UDP data received for 3s - waiting for audio source")
                         no_data_warning_shown = True
                     self._clear_leds()
 
                 time.sleep(0.001)
 
             except Exception as e:
-                print(f"❌ Processing error: {e}")
-                import traceback
-
-                traceback.print_exc()
+                log.exception("Processing error: %s", e)
                 time.sleep(0.1)
 
     def _update_leds(self):
@@ -1612,15 +1616,16 @@ class IntegratedLEDController:
             # Exit playlist mode if manually switching (unless explicitly told not to)
             if update_playlist_mode:
                 self.playlist_mode = False
-            # Only print if not using curses
             if not self.use_curses:
-                mode_indicator = "🔀 Manual" if not self.playlist_mode else "🔄 Playlist"
-                print(f"\r🎨 Effect changed to: {effect_name} ({mode_indicator})                    ")
-                self._print_help_hint()
+                if _is_tty:
+                    mode_indicator = "🔀 Manual" if not self.playlist_mode else "🔄 Playlist"
+                    print(f"\r🎨 Effect changed to: {effect_name} ({mode_indicator})                    ", flush=True)
+                    self._print_help_hint()
+                else:
+                    log.info("Effect changed to: %s (%s)", effect_name, "manual" if not self.playlist_mode else "playlist")
         else:
             if not self.use_curses:
-                print(f"❌ Unknown effect: {effect_name}")
-                print(f"   Supported effects: {', '.join(self.config.supported_effects)}")
+                log.warning("Unknown effect: %s - supported: %s", effect_name, ", ".join(self.config.supported_effects))
     
     def resume_playlist_mode(self):
         """Resume playlist mode (switch back to auto-rotation)"""
@@ -1630,12 +1635,15 @@ class IntegratedLEDController:
         if playlist:
             self.set_effect(playlist[0], update_playlist_mode=False)
         if not self.use_curses:
-            print(f"\r🔄 Resumed playlist mode                    ")
-            self._print_help_hint()
+            if _is_tty:
+                print(f"\r🔄 Resumed playlist mode                    ", flush=True)
+                self._print_help_hint()
+            else:
+                log.info("Resumed playlist mode")
 
     def _print_help_hint(self):
-        """Print keyboard shortcuts hint"""
-        if self.enable_keyboard and not self.use_curses:
+        """Print keyboard shortcuts hint (TTY only)"""
+        if _is_tty and self.enable_keyboard and not self.use_curses:
             supported = self.config.supported_effects
             try:
                 effect_idx = supported.index(self.current_effect) + 1
@@ -1669,7 +1677,7 @@ class IntegratedLEDController:
                     key = sys.stdin.read(1).lower()
 
                     if key == "q":
-                        print("\n\n👋 Quit requested...")
+                        log.info("Quit requested via keyboard")
                         self.running = False
                         break
                     elif key == "n":
@@ -1734,7 +1742,9 @@ class IntegratedLEDController:
             self.set_effect(supported[-1])
 
     def _show_keyboard_help(self):
-        """Show keyboard shortcuts"""
+        """Show keyboard shortcuts (TTY only)"""
+        if not _is_tty:
+            return
         print("\n")
         print("=" * 60)
         print("⌨️  KEYBOARD SHORTCUTS")
@@ -1759,7 +1769,7 @@ class IntegratedLEDController:
 
     def stop(self):
         """Stop the controller"""
-        print("🛑 Stopping controller...")
+        log.info("Stopping controller...")
         self.running = False
 
         if hasattr(self, "process_thread"):
@@ -1772,7 +1782,7 @@ class IntegratedLEDController:
             self.strip.setPixelColor(i, Color(0, 0, 0))
         self.strip.show()
 
-        print("✅ Controller stopped")
+        log.info("Controller stopped")
 
 
 # Global controller instance for HTTP API
@@ -1781,6 +1791,7 @@ _global_controller = None
 
 def create_http_api(controller, port=1129):
     """Create Flask HTTP API for LED control"""
+    logging.getLogger("werkzeug").setLevel(logging.WARNING)  # No request log spam in journal
     app = Flask(__name__)
     CORS(app)  # Enable CORS for web interface
 
@@ -2095,8 +2106,7 @@ def create_http_api(controller, port=1129):
     api_thread = threading.Thread(target=run_api, daemon=True)
     api_thread.start()
 
-    print(f"🌐 HTTP API server started on port {port}")
-    print(f"   Access at: http://localhost:{port}/api/status")
+    log.info("HTTP API server started on port %s - http://localhost:%s/api/status", port, port)
 
     return app
 
@@ -2614,10 +2624,13 @@ def _draw_help_screen(stdscr, controller):
 
 def main():
     """Main entry point"""
+    global _is_tty
+    _is_tty = sys.stdout.isatty()
+
     # Load config file first to get default values
     config = LEDConfig()
     if not config.load():  # Load from config/config.json (required)
-        print("\n❌ Failed to load configuration file. Exiting.")
+        log.error("Failed to load configuration file. Exiting.")
         sys.exit(1)
     
     # Validate required config values
@@ -2638,23 +2651,17 @@ def main():
     }
     missing = [name for name, value in required_fields.items() if value is None]
     if missing:
-        print(f"\n❌ Missing required configuration fields: {', '.join(missing)}")
-        print("   Please check your config/config.json file")
-        print("   All configuration values must be provided in the config file")
+        log.error("Missing required config fields: %s - check config/config.json", ", ".join(missing))
         sys.exit(1)
     
-    # Additional validation: playlist must have at least one effect
     if not config.playlist_effects or len(config.playlist_effects) == 0:
-        print("\n❌ runtime.effects_playlist must be a non-empty list")
-        print("   Please check your config/config.json file")
+        log.error("runtime.effects_playlist must be a non-empty list - check config/config.json")
         sys.exit(1)
     
-    # Additional validation: playlist effects must be in supported_effects
     if config.supported_effects:
         invalid_effects = [e for e in config.playlist_effects if e not in config.supported_effects]
         if invalid_effects:
-            print(f"\n❌ Invalid effects in playlist: {invalid_effects}")
-            print(f"   All playlist effects must be in supported_effects: {config.supported_effects}")
+            log.error("Invalid effects in playlist: %s - must be in supported_effects: %s", invalid_effects, config.supported_effects)
             sys.exit(1)
 
     parser = argparse.ArgumentParser(description="Integrated Audio Reactive LED Controller")
@@ -2758,29 +2765,28 @@ def main():
     if args.simulator and args.num_leds is None:
         num_leds = config.num_leds
 
-    print("=" * 60)
-    print("🎵 Integrated Audio Reactive LED Controller")
-    if args.simulator:
-        if not args.curses:
-            print("   🔮 SIMULATOR MODE (Simple Text UI)")
+    if _is_tty:
+        print("=" * 60)
+        print("🎵 Integrated Audio Reactive LED Controller")
+        if args.simulator:
+            print("   🔮 SIMULATOR MODE (Simple Text UI)" if not args.curses else "   🔮 SIMULATOR MODE (Curses UI)")
         else:
-            print("   🔮 SIMULATOR MODE (Curses UI)")
+            print("   💡 REAL LED MODE")
+        print("=" * 60)
+        print(f"📊 LEDs: {num_leds} on GPIO {pin}")
+        print(f"🎨 Effect: {effect}")
+        if args.simulator:
+            print(f"🖥️  Display: {display_mode}")
+        print(f"📡 Audio input: UDP port {audio_port}, format {audio_format}")
+        print()
     else:
-        print("   💡 REAL LED MODE")
-    print("=" * 60)
-    print(f"📊 LEDs: {num_leds} on GPIO {pin}")
-    print(f"🎨 Effect: {effect}")
-
-    if args.simulator:
-        print(f"🖥️  Display: {display_mode}")
-
-    print(f"📡 Audio input: UDP port {audio_port}, format {audio_format}")
-    print()
+        log.info("LEDs=%s pin=%s effect=%s audio_port=%s format=%s", num_leds, pin, effect, audio_port, audio_format)
 
     # Use curses interface for simulator mode (if --curses is specified)
     if args.simulator and args.curses:
-        print("🚀 Starting curses interface...")
-        print("   (Press any key to continue)")
+        if _is_tty:
+            print("🚀 Starting curses interface...")
+            print("   (Press any key to continue)")
         time.sleep(1)
         try:
             # Create a modified args object with merged values
@@ -2807,8 +2813,7 @@ def main():
             })
             return curses.wrapper(run_with_curses, merged_args)
         except Exception as e:
-            print(f"\n❌ Curses error: {e}")
-            print("   Falling back to simple mode...")
+            log.warning("Curses error: %s - falling back to simple mode", e)
             # Fall through to simple mode
 
     # Simple mode (default for simulator, or real LEDs)
@@ -2831,72 +2836,66 @@ def main():
         controller.config.current_effect = effect
 
     if not controller.start():
-        print("❌ Failed to start controller")
+        log.error("Failed to start controller")
         return 1
 
     # Start HTTP API server if not disabled
     if not args.no_api:
         create_http_api(controller, port=api_port)
 
-    print("🚀 Running!")
-    print(f"   Waiting for audio data on UDP port {audio_port}")
-    print()
-    print("   Supported sources:")
-    print("   - LQS-IoT_EqStreamer (32-band)")
-    print("   - WLED Audio Sync V1/V2 (16-band)")
-    print()
-    print("   Test with:")
-    print("   cd ../LQS-IoT_EqStreamer && dotnet run [your_rpi_ip]")
-
-    if not args.curses:
+    if _is_tty:
+        print("🚀 Running!")
+        print(f"   Waiting for audio data on UDP port {audio_port}")
+        print("   Supported: LQS-IoT_EqStreamer (32-band), WLED Audio Sync V1/V2 (16-band)")
+        if not args.curses:
+            mode_label = "Simple Mode" if args.simulator else "Real LED Mode"
+            print(f"⌨️  KEYBOARD CONTROLS ({mode_label}): n/p/r/h/q, 0-9")
+            controller._print_help_hint()
+        else:
+            print("⌨️  Press Ctrl+C to stop")
         print()
-        mode_label = "Simple Mode" if args.simulator else "Real LED Mode"
-        print(f"⌨️  KEYBOARD CONTROLS ({mode_label}):")
-        print("   n = Next effect (manual)    p = Previous effect (manual)    r = Resume playlist")
-        print("   h = Show help      q = Quit")
-        print("   0 = First effect (off)    1-9 = Effects 2-10 (manual)")
-        print()
-        controller._print_help_hint()
     else:
-        print("\n⌨️  Press Ctrl+C to stop")
-
-    print()
+        log.info("Running - waiting for UDP audio on port %s", audio_port)
 
     try:
-        # Print stats
         last_stats_time = time.time()
+        last_service_log = time.time()
         while True:
             time.sleep(0.1)
-
-            # Print stats every 2 seconds
-            if time.time() - last_stats_time > 2:
-                mode = "🔮 EMU" if args.simulator else "💡 LED"
-                status = "📡 ✅" if controller.udp_receiver.is_active() else "📡 ⏳"
-
-                # Get bass/mid/high averages
-                fft = controller.fft_result
-                bass = sum(fft[0:5]) / 5 if len(fft) >= 5 else 0
-                mids = sum(fft[5:11]) / 6 if len(fft) >= 11 else 0
-                highs = sum(fft[11:16]) / 5 if len(fft) >= 16 else 0
-
-                effect_name = controller.current_effect[:12].ljust(12)
-                print(
-                    f"\r{mode} {status} | "
-                    f"Effect: {effect_name} | "
-                    f"Vol: {controller.sample_agc:3d} | "
-                    f"Bass: {bass:3.0f} | "
-                    f"Mids: {mids:3.0f} | "
-                    f"Highs: {highs:3.0f} | "
-                    f"Beat: {'🔥' if controller.sample_peak > 0 else '  '} | "
-                    f"Pkts: {controller.udp_receiver.packet_count:5d}     ",
-                    end="",
-                    flush=True,
-                )
-
-                last_stats_time = time.time()
+            now = time.time()
+            if not _is_tty:
+                if now - last_service_log >= 60:
+                    log.info(
+                        "Status: effect=%s audio=%s pkts=%d",
+                        controller.current_effect,
+                        "active" if controller.udp_receiver.is_active() else "idle",
+                        controller.udp_receiver.packet_count,
+                    )
+                    last_service_log = now
+                continue
+            if now - last_stats_time <= 2:
+                continue
+            mode = "🔮 EMU" if args.simulator else "💡 LED"
+            status = "📡 ✅" if controller.udp_receiver.is_active() else "📡 ⏳"
+            fft = controller.fft_result
+            bass = sum(fft[0:5]) / 5 if len(fft) >= 5 else 0
+            mids = sum(fft[5:11]) / 6 if len(fft) >= 11 else 0
+            highs = sum(fft[11:16]) / 5 if len(fft) >= 16 else 0
+            effect_name = controller.current_effect[:12].ljust(12)
+            print(
+                f"\r{mode} {status} | Effect: {effect_name} | Vol: {controller.sample_agc:3d} | "
+                f"Bass: {bass:3.0f} Mids: {mids:3.0f} Highs: {highs:3.0f} | "
+                f"Beat: {'🔥' if controller.sample_peak > 0 else '  '} | Pkts: {controller.udp_receiver.packet_count:5d}     ",
+                end="",
+                flush=True,
+            )
+            last_stats_time = time.time()
 
     except KeyboardInterrupt:
-        print("\n\n👋 Shutting down...")
+        if _is_tty:
+            print("\n\n👋 Shutting down...")
+        else:
+            log.info("Shutting down (SIGINT)")
 
     finally:
         controller._clear_leds()
