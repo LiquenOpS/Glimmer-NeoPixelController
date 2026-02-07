@@ -335,7 +335,7 @@ class LEDConfig:
             if "rainbow_brightness" in kwargs:
                 self.effects_rainbow_brightness = max(0, min(255, int(kwargs["rainbow_brightness"])))
 
-    def save(self, filepath="config/config.json"):
+    def save(self, filepath="config/config.jsonc"):
         """Save configuration to file (hierarchical structure)"""
         # with self._lock:
         if True:
@@ -347,7 +347,7 @@ class LEDConfig:
             with open(filepath, "w", encoding="utf-8") as f:
                 json.dump(config, f, indent=2, ensure_ascii=False)
 
-    def load(self, filepath="config/config.json"):
+    def load(self, filepath="config/config.jsonc"):
         """Load configuration from file (supports JSONC format with // comments)"""
         try:
             with open(filepath, "r", encoding="utf-8") as f:
@@ -2629,7 +2629,7 @@ def main():
 
     # Load config file first to get default values
     config = LEDConfig()
-    if not config.load():  # Load from config/config.json (required)
+    if not config.load():  # Load from config/config.jsonc (required)
         log.error("Failed to load configuration file. Exiting.")
         sys.exit(1)
     
@@ -2651,11 +2651,11 @@ def main():
     }
     missing = [name for name, value in required_fields.items() if value is None]
     if missing:
-        log.error("Missing required config fields: %s - check config/config.json", ", ".join(missing))
+        log.error("Missing required config fields: %s - check config/config.jsonc", ", ".join(missing))
         sys.exit(1)
     
     if not config.playlist_effects or len(config.playlist_effects) == 0:
-        log.error("runtime.effects_playlist must be a non-empty list - check config/config.json")
+        log.error("runtime.effects_playlist must be a non-empty list - check config/config.jsonc")
         sys.exit(1)
     
     if config.supported_effects:

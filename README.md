@@ -52,7 +52,7 @@ Run the setup script to create a virtual environment and install dependencies:
 This will:
 - Create a Python virtual environment
 - Install all required dependencies
-- Create `config/` from `config.example` (contains config.json)
+- Create `config/` from `config.example` (contains config.jsonc)
 
 ### Manual Installation
 
@@ -141,7 +141,7 @@ When running (non-curses mode):
 
 ## Configuration
 
-Configuration is stored in `config/config.json`. Copy `config.example` to `config` (run `./setup.sh`) and customize:
+Configuration is stored in `config/config.jsonc` (JSONC: JSON with // comments). Copy `config.example` to `config` (run `./setup.sh`) and customize:
 
 ```json
 {
@@ -315,7 +315,7 @@ sudo journalctl -u glimmer -n 100
 ├── setup.sh                # One-time setup
 ├── ws281x_emulator.py      # Terminal LED emulator
 ├── config.example/         # Config template (copy to config/)
-│   └── config.json
+│   └── config.jsonc
 ├── ops/
 │   └── systemd/glimmer.service
 ├── requirements.txt

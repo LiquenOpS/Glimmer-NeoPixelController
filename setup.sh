@@ -8,7 +8,7 @@ VENV_DIR="${SCRIPT_DIR}/venv"
 REQUIREMENTS="${SCRIPT_DIR}/requirements.txt"
 CONFIG_DIR="${SCRIPT_DIR}/config"
 CONFIG_EXAMPLE_DIR="${SCRIPT_DIR}/config.example"
-CONFIG="${CONFIG_DIR}/config.json"
+CONFIG="${CONFIG_DIR}/config.jsonc"
 
 echo "🚀 Setting up Glimmer LED Controller..."
 echo ""
@@ -62,7 +62,7 @@ if [ ! -f "$CONFIG" ]; then
         echo "📝 Creating config/ from config.example..."
         cp -r "$CONFIG_EXAMPLE_DIR" "$CONFIG_DIR"
         echo "✅ Config created at $CONFIG"
-        echo "⚠️ Please review and edit config/config.json if needed"
+        echo "⚠️ Please review and edit config/config.jsonc if needed"
     else
         echo "⚠️ Warning: config.example not found"
     fi
