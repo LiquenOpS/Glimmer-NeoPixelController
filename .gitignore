@@ -215,7 +215,7 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
-# Project specific
-config/config.json
+# Project specific (config/ created by setup from config.example)
+config/
 *.pid
 *.log

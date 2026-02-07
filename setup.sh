@@ -7,7 +7,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VENV_DIR="${SCRIPT_DIR}/venv"
 REQUIREMENTS="${SCRIPT_DIR}/requirements.txt"
 CONFIG_DIR="${SCRIPT_DIR}/config"
-CONFIG_EXAMPLE="${CONFIG_DIR}/config.json.example"
+CONFIG_EXAMPLE_DIR="${SCRIPT_DIR}/config.example"
 CONFIG="${CONFIG_DIR}/config.json"
 
 echo "🚀 Setting up Glimmer LED Controller..."
@@ -56,32 +56,36 @@ else
 fi
 echo ""
 
-# Setup config file
+# Setup config (copy config.example to config if missing)
 if [ ! -f "$CONFIG" ]; then
-    if [ -f "$CONFIG_EXAMPLE" ]; then
-        echo "📝 Creating config.json from example..."
-        cp "$CONFIG_EXAMPLE" "$CONFIG"
-        echo "✅ Config file created at $CONFIG"
+    if [ -d "$CONFIG_EXAMPLE_DIR" ]; then
+        echo "📝 Creating config/ from config.example..."
+        cp -r "$CONFIG_EXAMPLE_DIR" "$CONFIG_DIR"
+        echo "✅ Config created at $CONFIG"
         echo "⚠️ Please review and edit config/config.json if needed"
     else
-        echo "⚠️ Warning: config/config.json.example not found"
+        echo "⚠️ Warning: config.example not found"
     fi
 else
-    echo "ℹ️ Config file already exists at $CONFIG"
+    echo "ℹ️ Config already exists at $CONFIG"
 fi
 echo ""
 
+chmod +x "${SCRIPT_DIR}/run.sh" 2>/dev/null || true
+
 echo "✨ Setup complete!"
 echo ""
-echo "To activate the virtual environment, run:"
-echo "  source ${VENV_DIR}/bin/activate"
-echo ""
-echo "To run the controller:"
-echo "  python3 main.py"
-echo ""
-echo "  Or with sudo (if GPIO access requires root):"
-echo "  sudo \$(which python3) ./main.py"
-echo ""
-echo "For simulator mode:"
-echo "  python3 main.py --simulator"
+read -p "Install systemd service (start on boot)? [y/N]: " INSTALL_SVC
+if [[ "$INSTALL_SVC" =~ ^[yY] ]]; then
+  echo "Installing service requires sudo."
+  sudo -v
+  SVC_FILE="/etc/systemd/system/glimmer.service"
+  sed "s|@INSTALL_DIR@|${SCRIPT_DIR}|g" "${SCRIPT_DIR}/ops/systemd/glimmer.service" | sudo tee "$SVC_FILE" > /dev/null
+  sudo systemctl daemon-reload
+  sudo systemctl enable --now glimmer
+  echo "  -> $SVC_FILE installed and started."
+else
+  echo "To run manually: ./run.sh"
+  echo "  Simulator: ./run.sh --simulator"
+fi
 echo ""

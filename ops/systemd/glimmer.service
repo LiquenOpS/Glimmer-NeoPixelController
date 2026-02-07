@@ -1,0 +1,20 @@
+# Install: Run ./setup.sh and choose "Install systemd service", or manually:
+#   sed 's|@INSTALL_DIR@|/path/to/Glimmer|' ops/systemd/glimmer.service | sudo tee /etc/systemd/system/glimmer.service
+#   sudo systemctl daemon-reload && sudo systemctl enable --now glimmer
+
+[Unit]
+Description=Glimmer LED Controller
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=@INSTALL_DIR@
+# Use run.sh for consistency; add common args. Run as root for GPIO (rpi_ws281x)
+ExecStart=@INSTALL_DIR@/run.sh --api-port 1129 --audio-port 31337
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

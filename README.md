@@ -52,7 +52,7 @@ Run the setup script to create a virtual environment and install dependencies:
 This will:
 - Create a Python virtual environment
 - Install all required dependencies
-- Create `config/config.json` from `config/config.json.example`
+- Create `config/` from `config.example` (contains config.json)
 
 ### Manual Installation
 
@@ -68,7 +68,7 @@ pip install -r requirements.txt
 pip install rpi-ws281x
 
 # Copy config template
-cp config/config.json.example config/config.json
+cp -r config.example config
 ```
 
 ## Usage
@@ -77,16 +77,13 @@ cp config/config.json.example config/config.json
 
 **Real LED Mode** (Raspberry Pi):
 ```bash
-# With virtual environment activated
-python3 main.py
-
-# Or with sudo (if GPIO access requires root)
-sudo $(which python3) ./main.py
+./run.sh
+# Or with sudo for GPIO: sudo ./run.sh
 ```
 
 **Emulator Mode** (Development/Testing):
 ```bash
-python3 main.py --simulator
+./run.sh --simulator
 ```
 
 ### Command Line Options
@@ -144,7 +141,7 @@ When running (non-curses mode):
 
 ## Configuration
 
-Configuration is stored in `config/config.json`. Copy `config/config.json.example` to `config/config.json` and customize:
+Configuration is stored in `config/config.json`. Copy `config.example` to `config` (run `./setup.sh`) and customize:
 
 ```json
 {
@@ -288,19 +285,14 @@ Make sure the controller is running first!
 
 ### Systemd Service
 
-1. Copy the service file:
+Run `./setup.sh` and choose "Install systemd service", or manually:
 ```bash
-sudo cp glimmer.service.example /etc/systemd/system/glimmer.service
-```
-
-2. Enable and start:
-```bash
+sed 's|@INSTALL_DIR@|/path/to/Glimmer|' ops/systemd/glimmer.service | sudo tee /etc/systemd/system/glimmer.service
 sudo systemctl daemon-reload
-sudo systemctl enable glimmer
-sudo systemctl start glimmer
+sudo systemctl enable --now glimmer
 ```
 
-3. Check status:
+Check status:
 ```bash
 sudo systemctl status glimmer
 ```
@@ -319,17 +311,16 @@ sudo journalctl -u glimmer -n 100
 ```
 .
 ├── main.py                 # Main application
+├── run.sh                  # Start Glimmer (manual or systemd)
+├── setup.sh                # One-time setup
 ├── ws281x_emulator.py      # Terminal LED emulator
-├── config/                 # Configuration directory
-│   └── config.json.example # Configuration template
-├── requirements.txt        # Python dependencies
-├── setup.sh               # Setup script
-├── glimmer.service.example # Systemd service template
-├── tests/                  # Test scripts
-│   ├── test_api.py
-│   ├── ws2812_control.py
-│   └── ...
-└── archive/                # Historical files
+├── config.example/         # Config template (copy to config/)
+│   └── config.json
+├── ops/
+│   └── systemd/glimmer.service
+├── requirements.txt
+├── tests/
+└── archive/
 ```
 
 ## Development

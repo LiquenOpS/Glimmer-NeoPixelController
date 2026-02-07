@@ -381,7 +381,7 @@ class LEDConfig:
             self.update(**config)
             return True
         except FileNotFoundError:
-            log.error("Config file not found: %s - copy from config/config.json.example", filepath)
+            log.error("Config file not found: %s - run ./setup.sh or copy config.example to config", filepath)
             return False
         except json.JSONDecodeError as e:
             log.error("Error parsing config file: %s - File: %s", e, filepath)
