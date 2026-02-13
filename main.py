@@ -1893,9 +1893,6 @@ def create_http_api(controller, port=1129):
             # Convert dot notation to hierarchical structure
             data = _flatten_dot_notation(data)
 
-            # add another level for Odoo
-            data = data["led_config"]
-
             # Define valid configuration keys
             VALID_TOP_LEVEL_KEYS = {"hardware", "runtime", "effects", "audio", "network", "simulator"}
             VALID_HW_KEYS = {"supported_effects"}
